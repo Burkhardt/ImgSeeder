@@ -1,11 +1,12 @@
-# ImgSeeder 3.11.3 Release Notes
+# ImgSeeder 3.11.4 Release Notes
 
 ## Summary
 
-- Releases `ImgSeeder` version `3.11.3` with the `iorg` command.
+- Releases `ImgSeeder` version `3.11.4` with the `iorg` command.
 - Carries forward `-rmc` as the short option alias for cache-delete mode while keeping `--rm-cache`.
-- Keeps the aligned help output formatting and updates fallback package defaults to `JsonPit 3.11.3`, `OsLibCore 3.11.3`, `RaiUtils 3.11.3`, and `RaiImage 3.11.3`.
+- Keeps the aligned help output formatting and updates fallback package defaults to `JsonPit 3.11.4`, `OsLibCore 3.11.4`, `RaiUtils 3.11.4`, and `RaiImage 3.11.4`.
 - Preserves the coordinated release order immediately before `PitSeeder`.
+- No CLI behavior changes from `3.11.3`.
 
 ## Validation
 
