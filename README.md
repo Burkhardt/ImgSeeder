@@ -2,12 +2,12 @@
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
-## 3.11.4
+## 3.11.5
 
 - Coordinated patch release: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
-- Fallback package defaults stay aligned on `JsonPit 3.11.4`, `OsLibCore 3.11.4`, `RaiUtils 3.11.4`, and `RaiImage 3.11.4`.
+- Fallback package defaults stay aligned on `JsonPit 3.11.5`, `OsLibCore 3.11.5`, `RaiUtils 3.11.5`, and `RaiImage 3.11.5`.
 - Help output continues to use fixed option-column formatting so glyph icons align consistently.
-- Current release notes: [RELEASE_NOTES_3.11.4.md](RELEASE_NOTES_3.11.4.md)
+- Current release notes: [RELEASE_NOTES_3.11.5.md](RELEASE_NOTES_3.11.5.md)
 
 This tool is part of the RAIkeep package family:
 
