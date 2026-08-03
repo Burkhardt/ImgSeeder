@@ -1,13 +1,15 @@
 # ImgSeeder
 
+ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc/`](https://github.com/Burkhardt/RAIkeep/tree/main/doc) directory under `ImgSeeder_...` filenames; they are not stored separately in this child repository.
+
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
-## 3.13.0
+## 3.13.1
 
-- Coordinated minor release: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
-- Fallback package defaults stay aligned on `JsonPit 3.13.0`, `OsLibCore 3.13.0`, `RaiUtils 3.13.0`, and `RaiImage 3.13.0`.
+- Coordinated patch release: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
+- Fallback package defaults stay aligned on `JsonPit 3.13.1`, `OsLibCore 3.13.1`, `RaiUtils 3.13.1`, and `RaiImage 3.13.1`.
 - Help output continues to use fixed option-column formatting so glyph icons align consistently.
-- Current release notes: [RELEASE_NOTES_3.13.0.md](RELEASE_NOTES_3.13.0.md)
+- Current release notes: [ImgSeeder_RELEASE_NOTES_3.13.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_3.13.1.md)
 
 This tool is part of the RAIkeep package family:
 
