@@ -11,6 +11,7 @@
     <Authors>Rainer Burkhardt</Authors>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>HardCastle.png</PackageIcon>
     <PackageProjectUrl>https://github.com/Burkhardt/ImgSeeder</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Burkhardt/ImgSeeder.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -45,6 +46,7 @@
     <EmbeddedResource Remove="ImgSeeder.Tests/**" />
     <None Remove="ImgSeeder.Tests/**" />
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="HardCastle.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <Target Name="ValidateLocalRAIkeepSources"
