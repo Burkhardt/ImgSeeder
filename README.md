@@ -4,6 +4,8 @@ ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc
 
 The NuGet tool package includes the Burkhardt `HardCastle.png` package icon, matching the other RAIkeep packages.
 
+ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `OneDrive`, `GoogleDrive`, and `ICloudDrive`.
+
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
 ## 3.13.1
