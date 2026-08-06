@@ -8,12 +8,12 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
-## 3.13.2
+## 4.0.0
 
-- Coordinated patch release: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
-- Fallback package defaults stay aligned on `JsonPit 3.13.2`, `OsLibCore 3.13.2`, `RaiUtils 3.13.2`, and `RaiImage 3.13.2`.
+- Coordinated major release prep: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
+- Fallback package defaults stay aligned on `JsonPit 4.0.0`, `OsLibCore 4.0.0`, `RaiUtils 4.0.0`, and `RaiImage 4.0.0`.
 - Help output continues to use fixed option-column formatting so glyph icons align consistently.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_3.13.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_3.13.2.md)
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.0.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.0.0.md)
 
 This tool is part of the RAIkeep package family:
 

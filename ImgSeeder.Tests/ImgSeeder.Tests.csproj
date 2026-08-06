@@ -11,8 +11,8 @@
 		<RaiImageProjectPath Condition="'$(RAIkeepRoot)' != '' and Exists('$(RAIkeepRoot)/RaiImage/RaiImage.csproj')">$(RAIkeepRoot)/RaiImage/RaiImage.csproj</RaiImageProjectPath>
 		<UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == '' and '$(OsLibProjectPath)' != '' and '$(RaiImageProjectPath)' != ''">true</UseLocalRAIkeepSources>
 		<UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == ''">false</UseLocalRAIkeepSources>
-		<OsLibPackageVersion Condition="'$(OsLibPackageVersion)' == ''">3.13.2</OsLibPackageVersion>
-		<RaiImagePackageVersion Condition="'$(RaiImagePackageVersion)' == ''">3.13.2</RaiImagePackageVersion>
+		<OsLibPackageVersion Condition="'$(OsLibPackageVersion)' == ''">4.0.0</OsLibPackageVersion>
+		<RaiImagePackageVersion Condition="'$(RaiImagePackageVersion)' == ''">4.0.0</RaiImagePackageVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
