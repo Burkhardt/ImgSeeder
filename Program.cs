@@ -37,8 +37,10 @@ public static class Messages
 	public static int? SourceImageCount { get; set; }
 	public static RaiPath? SourceRoot { get; set; }
 	public static string? Subscriber { get; set; }
-	public static PathConventionType PathConvention { get; set; } = PathConventionType.ItemIdTree8x2;
-	public static ImageNamingConvention NamingConvention { get; set; } = ImageNamingConvention.Structured;
+	public const PathConventionType DefaultPathConvention = PathConventionType.ItemIdTree8x2;
+	public const ImageNamingConvention DefaultNamingConvention = ImageNamingConvention.Structured;
+	public static PathConventionType PathConvention { get; set; } = DefaultPathConvention;
+	public static ImageNamingConvention NamingConvention { get; set; } = DefaultNamingConvention;
 
 	public static string[] Help
 	{
@@ -46,6 +48,9 @@ public static class Messages
 		{
 			var lines = new List<string>
 			{
+				HelpLine("Commands", Icons.Info, "organize, clean (preferred 4.x syntax)"),
+				"  iorg organize --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3> (-n|--nameconv) <1|2|3>",
+				"  iorg clean <ShortName> (-r|--root) <dir> [--cache] [--force]",
 				HelpLine("-h, --help", Icons.Help, "print out all options"),
 				HelpLine("-v, --version", Icons.Info, "print version info"),
 				HelpLine("-l, --nologo", BannerIcon(), "do not display the banner"),
@@ -55,8 +60,9 @@ public static class Messages
 				HelpLine("-rm, --rm", Icons.File, "list images that would be deleted for ShortName"),
 				HelpLine("-rmc, --rm-cache", Icons.File, "list cached images that would be deleted for ShortName"),
 				HelpLine("--force", Icons.Force, "force delete for -rm or -rmc/--rm-cache"),
-				HelpLine("-p, --pathconv", SelectedOptionIcon(PathConvention), NumberedOptions<PathConventionType>()),
-				HelpLine("-n, --nameconv", SelectedOptionIcon(NamingConvention), NumberedOptions<ImageNamingConvention>()),
+				HelpLine("-p, --pathconv", SelectedOptionIcon(PathConvention), PathConventionDescription()),
+				HelpLine("-n, --nameconv", SelectedOptionIcon(NamingConvention), NamingConventionDescription()),
+				HelpLine("Legacy", Icons.Info, "flat operation syntax remains supported in 4.x; use commands before 5.x"),
 			};
 
 			if (SourceRoot != null)
@@ -71,13 +77,19 @@ public static class Messages
 		}
 	}
 
-	private static string CloudDescription()
+	internal static string CloudDescription()
 	{
 		var options = CloudProviderOptions();
 		return options.Length > 0
-			? NumberedOptions(options)
-			: "cloud provider name; []";
+			? NumberedOptions(options, options[0])
+			: "no DefaultCloudOrder providers are configured";
 	}
+
+	internal static string PathConventionDescription()
+		=> NumberedOptions(Enum.GetNames<PathConventionType>(), DefaultPathConvention.ToString());
+
+	internal static string NamingConventionDescription()
+		=> NumberedOptions(Enum.GetNames<ImageNamingConvention>(), DefaultNamingConvention.ToString());
 
 	private static string HelpLine(string option, object icon, string description)
 	{
@@ -113,23 +125,16 @@ public static class Messages
 		return SelectedNumberIcon(index + 1);
 	}
 
-	private static string NumberedOptions<TEnum>()
-		where TEnum : struct, Enum
+	private static string NumberedOptions(IReadOnlyList<string> names, string? defaultName)
 	{
-		return NumberedOptions(Enum.GetNames<TEnum>());
+		return string.Join(", ", names.Select((name, index) =>
+			$"{NumberIcon(index + 1)} {name}{(string.Equals(name, defaultName, StringComparison.OrdinalIgnoreCase) ? " (default)" : string.Empty)}"));
 	}
 
-	private static string NumberedOptions(IReadOnlyList<string> names)
-	{
-		return string.Join(", ", names.Select((name, index) => $"{NumberIcon(index + 1)} {name}"));
-	}
-
-	private static string[] CloudProviderOptions()
+	internal static string[] CloudProviderOptions()
 	{
 		var ordered = CloudProviderOrderOptions();
-		if (ordered.Length > 0)
-			return ordered;
-
+		var configured = new List<string>();
 		try
 		{
 			dynamic? cloud = Os.Config?.Cloud;
@@ -137,12 +142,27 @@ public static class Messages
 				return [];
 
 			IEnumerable<dynamic> properties = cloud.Properties();
-			return properties.Select(property => (string)property.Name).ToArray();
+			configured.AddRange(properties
+				.Where(property => !string.IsNullOrWhiteSpace(property.Value?.ToString()))
+				.Select(property => (string)property.Name));
 		}
 		catch
 		{
 			return [];
 		}
+
+		return FilterConfiguredDefaultCloudProviders(ordered, configured);
+	}
+
+	internal static string[] FilterConfiguredDefaultCloudProviders(
+		IEnumerable<string> defaultCloudOrder,
+		IEnumerable<string> configuredCloudProviders)
+	{
+		var configured = configuredCloudProviders.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return defaultCloudOrder
+			.Where(name => !string.IsNullOrWhiteSpace(name) && configured.Contains(name))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
 	}
 
 	private static string[] CloudProviderOrderOptions()
@@ -217,12 +237,14 @@ public static class Messages
 
 	public static void WriteBanner(string text)
 	{
+		Console.Write($"{Icons.Banner} ");
 		WriteLine(text);
 		Console.WriteLine(text);
+		Console.Write($"{Icons.Banner} ");
 		WriteLine(text);
 	}
 
-	private static void WriteLine(string text, char underlineChar = '=')
+	private static void WriteLine(string text, char underlineChar = '─')
 	{
 		for (int i = 0; i < text.Length; i++) Console.Write(underlineChar);
 		Console.WriteLine();
@@ -500,6 +522,14 @@ internal static class Program
 {
 	private static int Main(string[] args)
 	{
+		if (args.Length > 0 && args[0] is "organize" or "clean")
+			return RunCommand(args[0], args[1..]);
+
+		return RunMappedArguments(args);
+	}
+
+	private static int RunMappedArguments(string[] args)
+	{
 		try
 		{
 			if (HasOption(args, "-v", "--version"))
@@ -511,7 +541,8 @@ internal static class Program
 			Messages.Debug = HasOption(args, "-d", "--debug");
 			Messages.Banner = !HasOption(args, "-l", "--nologo");
 			var showHelp = HasOption(args, "-h", "--help");
-			Messages.CloudProvider = ParamValue(args, "-c", "--cloudprovider", "--cloud");
+			var requestedCloudProvider = ParamValue(args, "-c", "--cloudprovider", "--cloud");
+			Messages.CloudProvider = ResolveCloudProvider(requestedCloudProvider);
 			var rootParam = ParamValue(args, "-r", "--root", "--imageroot");
 			var sourceParam = ParamValue(args, "-s", "--source");
 			var deleteShortName = ParamValue(args, "-rm", "--rm");
@@ -531,7 +562,11 @@ internal static class Program
 			Messages.SourceImageCount = Messages.SourceRoot != null && Messages.SourceRoot.Exists()
 				? ImageOrganizer.CountSourceImages(Messages.SourceRoot)
 				: null;
-			var imageRoot = ResolveImageRoot(Messages.CloudProvider, rootParam);
+			var effectiveCloudProvider = EffectiveCloudProvider(
+				Messages.CloudProvider,
+				rootParam,
+				!string.IsNullOrWhiteSpace(requestedCloudProvider));
+			var imageRoot = ResolveImageRoot(effectiveCloudProvider, rootParam);
 			Messages.ImageRoot = imageRoot;
 			var destinationRoot = ResolveDestinationRoot(imageRoot, Messages.Subscriber);
 			Messages.DestinationRoot = destinationRoot;
@@ -621,6 +656,200 @@ internal static class Program
 			if (Messages.Debug)
 				Console.Error.WriteLine(ex);
 			return 1;
+		}
+	}
+
+	private static int RunCommand(string command, string[] args)
+	{
+		try
+		{
+			var requestedCloudProvider = ParamValue(args, "-c", "--cloudprovider", "--cloud");
+			Messages.CloudProvider = ResolveCloudProvider(requestedCloudProvider);
+			if (HasOption(args, "-h", "--help"))
+			{
+				WriteCommandHelp(command);
+				return 0;
+			}
+			if (HasOption(args, "-v", "--version"))
+				return RunMappedArguments(args);
+
+			return command switch
+			{
+				"organize" => RunOrganizeCommand(args),
+				"clean" => RunCleanCommand(args),
+				_ => throw new ArgumentException($"Unknown command '{command}'.")
+			};
+		}
+		catch (ArgumentException ex)
+		{
+			Messages.WriteError($"CLI Error: {ex.Message}");
+			Messages.WriteInfo($"Run 'iorg {command} --help' for command usage.");
+			return 1;
+		}
+	}
+
+	private static int RunOrganizeCommand(string[] args)
+	{
+		var valueOptions = CommandGlobalValueOptions
+			.Concat(["--source", "-r", "--root", "-p", "--pathconv", "-n", "--nameconv", "--subscriber"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
+		if (positionals.Count > 1)
+			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
+
+		var source = RequiredCommandValue(args, "--source");
+		var root = RequiredCommandValue(args, "--root", "-r");
+		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(RequiredCommandValue(args, "--pathconv", "-p"), "--pathconv");
+		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(RequiredCommandValue(args, "--nameconv", "-n"), "--nameconv");
+		var subscriberOption = ParamValue(args, "--subscriber");
+		if (positionals.Count == 1 && !string.IsNullOrWhiteSpace(subscriberOption))
+			throw new ArgumentException("Specify the subscriber either positionally or with --subscriber, not both.");
+
+		var rootBinding = BindCommandRoot(
+			root,
+			Messages.CloudProvider,
+			positionals.SingleOrDefault() ?? subscriberOption,
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		var mapped = CommandGlobalArguments(args, rootBinding);
+		mapped.AddRange(["--source", source, "--pathconv", pathConvention, "--nameconv", nameConvention, rootBinding.Subscriber]);
+		return RunMappedArguments(mapped.ToArray());
+	}
+
+	private static int RunCleanCommand(string[] args)
+	{
+		var valueOptions = CommandGlobalValueOptions
+			.Concat(["-r", "--root", "--subscriber"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--cache", "--force"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
+		if (positionals.Count != 1)
+			throw new ArgumentException("clean requires exactly one <ShortName>; an unbounded delete is not supported.");
+
+		var root = RequiredCommandValue(args, "--root", "-r");
+		var rootBinding = BindCommandRoot(
+			root,
+			Messages.CloudProvider,
+			ParamValue(args, "--subscriber"),
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		var mapped = CommandGlobalArguments(args, rootBinding);
+		mapped.AddRange([HasOption(args, "--cache") ? "-rmc" : "-rm", positionals[0], rootBinding.Subscriber]);
+		if (HasOption(args, "--force"))
+			mapped.Add("--force");
+		return RunMappedArguments(mapped.ToArray());
+	}
+
+	private sealed record CommandRootBinding(string Root, string Subscriber, string? CloudProvider);
+
+	private static CommandRootBinding BindCommandRoot(
+		string root,
+		string? cloudProvider,
+		string? subscriber,
+		bool cloudProviderExplicit)
+	{
+		cloudProvider = EffectiveCloudProvider(cloudProvider, root, cloudProviderExplicit);
+		if (!string.IsNullOrWhiteSpace(subscriber))
+			return new CommandRootBinding(root, subscriber, cloudProvider);
+
+		var destination = ResolveImageRoot(cloudProvider, root)
+			?? throw new ArgumentException("The destination root could not be resolved.");
+		var inferredSubscriber = destination.Segments.LastOrDefault();
+		if (string.IsNullOrWhiteSpace(inferredSubscriber))
+			throw new ArgumentException("Cannot infer a subscriber from --root; provide --subscriber <name>.");
+
+		return new CommandRootBinding(destination.Parent.FullPath, inferredSubscriber, null);
+	}
+
+	private static List<string> CommandGlobalArguments(string[] args, CommandRootBinding rootBinding)
+	{
+		var mapped = new List<string>();
+		if (HasOption(args, "-d", "--debug")) mapped.Add("--debug");
+		if (HasOption(args, "-l", "--nologo")) mapped.Add("--nologo");
+		if (!string.IsNullOrWhiteSpace(rootBinding.CloudProvider))
+			mapped.AddRange(["--cloud", rootBinding.CloudProvider]);
+		mapped.AddRange(["--root", rootBinding.Root]);
+		return mapped;
+	}
+
+	private static readonly string[] CommandGlobalValueOptions =
+	[
+		"-c", "--cloudprovider", "--cloud"
+	];
+
+	private static readonly string[] CommandGlobalSwitchOptions =
+	[
+		"-h", "--help", "-v", "--version", "-d", "--debug", "-l", "--nologo"
+	];
+
+	private static List<string> ValidateCommandTokens(
+		string[] args,
+		IReadOnlySet<string> allowedOptions,
+		IReadOnlySet<string> valueOptions)
+	{
+		var positionals = new List<string>();
+		for (var i = 0; i < args.Length; i++)
+		{
+			var token = args[i];
+			if (!token.StartsWith("-", StringComparison.Ordinal))
+			{
+				positionals.Add(token);
+				continue;
+			}
+			if (!allowedOptions.Contains(token))
+				throw new ArgumentException($"Unknown option '{token}'.");
+			if (!valueOptions.Contains(token))
+				continue;
+			if (i + 1 >= args.Length || args[i + 1].StartsWith("-", StringComparison.Ordinal))
+				throw new ArgumentException($"The option '{token}' requires a value.");
+			i++;
+		}
+		return positionals;
+	}
+
+	private static string RequiredCommandValue(string[] args, string option, params string[] aliases)
+	{
+		var value = ParamValue(args, [option, .. aliases]);
+		return !string.IsNullOrWhiteSpace(value)
+			? value
+			: throw new ArgumentException($"The option '{option}' is required.");
+	}
+
+	private static string NormalizeNumberedCommandEnum<TEnum>(string value, string option)
+		where TEnum : struct, Enum
+	{
+		if (!int.TryParse(value, out var number))
+			return value;
+		var names = Enum.GetNames<TEnum>();
+		if (number < 1 || number > names.Length)
+			throw new ArgumentException($"The option '{option}' must be between 1 and {names.Length}.");
+		return names[number - 1];
+	}
+
+	private static void WriteCommandHelp(string command)
+	{
+		var lines = command switch
+		{
+			"organize" => new[]
+			{
+				"Usage: iorg organize [<Subscriber> | --subscriber <name>] --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3> (-n|--nameconv) <1|2|3> [global options]",
+				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
+			},
+			"clean" => new[]
+			{
+				"Usage: iorg clean <ShortName> [--subscriber <name>] (-r|--root) <dir> [--cache] [--force] [global options]",
+				"Clean is a dry run unless --force is present; an unbounded delete is never inferred."
+			},
+			_ => Array.Empty<string>()
+		};
+		foreach (var line in lines)
+			Messages.WriteSuccess(line);
+		Messages.WriteInfo("Global options: -c|--cloud, -d|--debug, -l|--nologo");
+		Messages.WriteInfo($"-c|--cloud: {Messages.CloudDescription()}");
+		if (command == "organize")
+		{
+			Messages.WriteInfo($"-p|--pathconv: {Messages.PathConventionDescription()}");
+			Messages.WriteInfo($"-n|--nameconv: {Messages.NamingConventionDescription()}");
 		}
 	}
 
@@ -749,6 +978,44 @@ internal static class Program
 		return root;
 	}
 
+	private static string? ResolveCloudProvider(string? requestedCloudProvider)
+	{
+		var configured = Messages.CloudProviderOptions();
+		if (string.IsNullOrWhiteSpace(requestedCloudProvider))
+			return configured.FirstOrDefault();
+
+		var resolved = configured.FirstOrDefault(provider =>
+			string.Equals(provider, requestedCloudProvider, StringComparison.OrdinalIgnoreCase));
+		if (resolved != null)
+			return resolved;
+
+		var available = configured.Length > 0 ? string.Join(", ", configured) : "none";
+		throw new ArgumentException(
+			$"The cloud provider '{requestedCloudProvider}' is not configured as a DefaultDrive on this machine. " +
+			$"Configured DefaultCloudOrder options: {available}.");
+	}
+
+	private static string? EffectiveCloudProvider(
+		string? cloudProvider,
+		string? rootParam,
+		bool cloudProviderExplicit)
+	{
+		if (cloudProviderExplicit || string.IsNullOrWhiteSpace(rootParam))
+			return cloudProvider;
+		if (rootParam == ".")
+			return null;
+
+		try
+		{
+			_ = new RaiRelPath(rootParam);
+			return cloudProvider;
+		}
+		catch (ArgumentException)
+		{
+			return null;
+		}
+	}
+
 	private static RaiPath? ResolveDestinationRoot(RaiPath? imageRoot, string? subscriber)
 	{
 		if (imageRoot == null || string.IsNullOrWhiteSpace(subscriber))
@@ -765,9 +1032,9 @@ internal static class Program
 		{
 			result = default;
 			if (typeof(TEnum) == typeof(PathConventionType))
-				result = (TEnum)(object)PathConventionType.ItemIdTree8x2;
+				result = (TEnum)(object)Messages.DefaultPathConvention;
 			else if (typeof(TEnum) == typeof(ImageNamingConvention))
-				result = (TEnum)(object)ImageNamingConvention.Structured;
+				result = (TEnum)(object)Messages.DefaultNamingConvention;
 			return true;
 		}
 
@@ -831,14 +1098,13 @@ internal static class Program
 	private static string GetVersion()
 	{
 		var assembly = Assembly.GetEntryAssembly();
-		var name = assembly?.GetName().Name?.ToLowerInvariant() ?? "pits";
 		var version = assembly?
 			.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
 			.InformationalVersion
 			.Split('+')[0]
 			?? assembly?.GetName().Version?.ToString()
 			?? "unknown";
-		return $"{name} v{version}";
+		return $"iorg v{version}";
 	}
 
 }

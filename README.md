@@ -8,12 +8,13 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
-## 4.0.0
+## 4.0.1
 
-- Coordinated major release prep: carries forward `-rmc` as the short alias for cache deletion while keeping `--rm-cache`.
-- Fallback package defaults stay aligned on `JsonPit 4.0.0`, `OsLibCore 4.0.0`, `RaiUtils 4.0.0`, and `RaiImage 4.0.0`.
-- Help output continues to use fixed option-column formatting so glyph icons align consistently.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.0.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.0.0.md)
+- Adds command-first `organize` and `clean` syntax for CR006.
+- Keeps established flat `iorg` invocations working throughout `4.x`; the legacy parser is scheduled for removal in `5.x.x`.
+- Fallback package defaults stay aligned on `JsonPit 4.0.1`, `OsLibCore 4.0.1`, `RaiUtils 4.0.1`, and `RaiImage 4.0.1`.
+- Help is contextual per command and startup banners use decorative glyph rules instead of repeated equals signs.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.0.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.0.1.md)
 
 This tool is part of the RAIkeep package family:
 
@@ -55,15 +56,26 @@ sudo dotnet tool update ImgSeeder --tool-path /usr/local/bin
 Typical cloud-rooted usage:
 
 ```bash
-iorg -c OneDrive -r LiveAfricaStageImage nomsa -s /Users/Shared/ServerData/GDriveData/TestAfricaStage/Images/NOMSA.net/
+iorg organize -c OneDrive --root LiveAfricaStageImage/nomsa \
+  --source /Users/Shared/ServerData/GDriveData/TestAfricaStage/Images/NOMSA.net/ \
+  --pathconv 3 --nameconv 3
 ```
 
-The command resolves `-c` through `Os.Config.Cloud`, appends `-r` and the subscriber name, then copies each supported source image into the destination image tree.
+The command resolves `-c` through `Os.Config.Cloud`. When `--subscriber` is
+omitted, `--root` is the complete subscriber destination and its final directory
+name supplies the subscriber identity. Alternatively, provide a parent image root
+and `--subscriber <name>` explicitly.
+
+When `-c`/`--cloud` is omitted, `iorg` selects the first provider in the
+configured `Os.Config.DefaultCloudOrder` that also has a non-empty `Cloud` path.
+The configured order is preserved in help, and providers outside that filtered
+list are rejected. An explicit absolute root (or `.`) remains local when no cloud
+option was explicitly supplied.
 
 To inspect the resolved values without copying files, add `-h`:
 
 ```bash
-iorg -h -c OneDrive -r LiveAfricaStageImage nomsa -s /Users/Shared/ServerData/GDriveData/TestAfricaStage/Images/NOMSA.net/
+iorg organize --help
 ```
 
 The help screen shows the resolved source, destination `ImageRoot`, subscriber, supported image extensions, detected source image count, and option selections. With `-d`, it also prints debug diagnostics such as `CanRun`, `RunBlocker`, source/target existence checks, and resolved full paths. Remove `-h` to execute the copies.
@@ -83,23 +95,29 @@ With `-d`, each copied image is printed with full destination and source paths:
 
 The final summary reports how many detected source images were copied and groups any files that were not copied by failure reason.
 
-To inspect image deletion for an item without deleting files, use `-rm` with a `ShortName`:
+To inspect image deletion for an item without deleting files, use `clean` with a
+required `ShortName`:
 
 ```bash
-iorg -rm NomsaConcert_11 -c OneDrive -r LiveAfricaStageImage nomsa
+iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa
 ```
 
-`ShortName` can be either `ItemId` or `ItemId_Nr`. `-rm` matches all images for that short name, while `-rmc` (or `--rm-cache`) matches only cached/rendered variants such as files with a template/name extension:
+`ShortName` can be either `ItemId` or `ItemId_Nr`. By default, `clean` matches all
+images for that short name; `--cache` limits the operation to cached/rendered
+variants such as files with a template/name extension:
 
 ```bash
-iorg -rmc NomsaConcert_11 -c OneDrive -r LiveAfricaStageImage nomsa
+iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa --cache
 ```
 
 Delete commands are dry-run by default and list what would be deleted. Add `--force` to actually delete the matched files:
 
 ```bash
-iorg -rmc NomsaConcert_11 -c OneDrive -r LiveAfricaStageImage nomsa --force
+iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa --cache --force
 ```
+
+An unbounded clean is not supported: omitting `ShortName` is a validation error,
+including when `--force` is present.
 
 Useful options:
 
@@ -107,14 +125,25 @@ Useful options:
 - `-v`, `--version`: print version
 - `-l`, `--nologo`: hide banner
 - `-d`, `--debug`: enable debug output
-- `-c`, `--cloud`: cloud provider name from `Os.Config.Cloud`
-- `-r`, `--root`: destination image root under the cloud root
-- `-s`, `--source`: source image directory
-- `-rm`: list all images that would be deleted for `ShortName`; add `--force` to delete
-- `-rmc`, `--rm-cache`: list cached images that would be deleted for `ShortName`; add `--force` to delete
-- `--force`: perform delete actions for `-rm` or `-rmc/--rm-cache`
-- `-p`, `--pathconv`: `CanonicalByName`, `ItemIdTree3x3`, or `ItemIdTree8x2`
-- `-n`, `--nameconv`: `Legacy`, `ItemTemplate`, or `Structured`
+- `-c`, `--cloud`: configured provider from `Os.Config.DefaultCloudOrder`; defaults to its first available entry
+- `-r`, `--root`: destination root; complete subscriber destination unless `--subscriber` is supplied
+- `--subscriber`: explicit subscriber identity when `--root` is the parent image root
+- `--source`: source image directory for `organize`
+- `--cache`: restrict `clean` to cached/rendered images
+- `--force`: perform the otherwise dry-run clean
+- `-p`, `--pathconv`: `1` CanonicalByName, `2` ItemIdTree3x3, or `3` ItemIdTree8x2 (default)
+- `-n`, `--nameconv`: `1` Legacy, `2` ItemTemplate, or `3` Structured (default)
+
+Run `iorg <command> --help` for contextual options.
+
+## 4.x legacy transition
+
+The existing flat `-s`, `-rm`, `-rmc`/`--rm-cache`, positional subscriber,
+`-p`, and `-n` forms remain supported throughout `4.x` and invoke the same
+handlers as command syntax. New scripts should use subcommands. The `5.x.x` line
+will require `organize` or `clean`. The root option is not deprecated:
+`-r` and `--root` are both supported by the new command parser. The `-p` and
+`-n` convention aliases likewise remain available, scoped to `organize`.
 
 ## Standalone Binaries
 
