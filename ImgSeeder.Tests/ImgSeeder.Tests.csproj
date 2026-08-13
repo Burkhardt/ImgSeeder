@@ -6,13 +6,6 @@
 		<Nullable>enable</Nullable>
 		<IsPackable>false</IsPackable>
 		<RootNamespace>Iorg.Tests</RootNamespace>
-		<RAIkeepRoot Condition="'$(RAIkeepRoot)' == '' and Exists('../../RaiImage/RaiImage.csproj')">../..</RAIkeepRoot>
-		<OsLibProjectPath Condition="'$(RAIkeepRoot)' != '' and Exists('$(RAIkeepRoot)/OsLib/OsLib.csproj')">$(RAIkeepRoot)/OsLib/OsLib.csproj</OsLibProjectPath>
-		<RaiImageProjectPath Condition="'$(RAIkeepRoot)' != '' and Exists('$(RAIkeepRoot)/RaiImage/RaiImage.csproj')">$(RAIkeepRoot)/RaiImage/RaiImage.csproj</RaiImageProjectPath>
-		<UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == '' and '$(OsLibProjectPath)' != '' and '$(RaiImageProjectPath)' != ''">true</UseLocalRAIkeepSources>
-		<UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == ''">false</UseLocalRAIkeepSources>
-		<OsLibPackageVersion Condition="'$(OsLibPackageVersion)' == ''">4.0.1</OsLibPackageVersion>
-		<RaiImagePackageVersion Condition="'$(RaiImagePackageVersion)' == ''">4.0.1</RaiImagePackageVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -27,16 +20,6 @@
 
 	<ItemGroup>
 		<ProjectReference Include="../ImgSeeder.csproj" />
-	</ItemGroup>
-
-	<ItemGroup Condition="'$(UseLocalRAIkeepSources)' == 'true'">
-		<ProjectReference Include="$(OsLibProjectPath)" />
-		<ProjectReference Include="$(RaiImageProjectPath)" />
-	</ItemGroup>
-
-	<ItemGroup Condition="'$(UseLocalRAIkeepSources)' != 'true'">
-		<PackageReference Include="OsLibCore" Version="$(OsLibPackageVersion)" />
-		<PackageReference Include="RaiImage" Version="$(RaiImagePackageVersion)" />
 	</ItemGroup>
 
 	<ItemGroup>
