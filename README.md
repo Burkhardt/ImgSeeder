@@ -12,6 +12,14 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
+## 4.2.1
+
+- Uses glyphs embedded in `JetBrainsMonoNLNerdFontPropo-Regular` for cloud-provider and numbered help options, avoiding fallback-font width differences.
+- Aligns contextual option descriptions consistently and reserves two terminal cells at the end of help lines for renderers such as Blink.
+- Continues to depend on `JsonPit 4.2.0`, `OsLibCore 4.2.0`, `RaiUtils 4.2.0`, and `RaiImage 4.2.0`; no library package version changes are part of this CLI-only patch.
+- Terminal setup guidance: [TERMINAL_FONTS.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/TERMINAL_FONTS.md)
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.1.md)
+
 ## 4.2.0
 
 - Retains the command-first `organize` and `clean` syntax introduced for CR006.
@@ -19,7 +27,7 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 - Fallback package defaults are aligned on `JsonPit 4.2.0`, `OsLibCore 4.2.0`, `RaiUtils 4.2.0`, and `RaiImage 4.2.0`.
 - No ImgSeeder CLI behavior changes from 4.1.0.
 - Help is contextual per command and startup banners use decorative glyph rules instead of repeated equals signs.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.0.md)
+- Release notes: [ImgSeeder_RELEASE_NOTES_4.2.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.0.md)
 
 This tool is part of the RAIkeep package family:
 

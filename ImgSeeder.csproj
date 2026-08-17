@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Title>ImgSeeder</Title>
     <Description>RAIkeep image organizer CLI for reorganizing flat image directories into RaiImage tree layouts.</Description>
-      <Version>4.2.0</Version>
+      <Version>4.2.1</Version>
       <AssemblyVersion>$(Version)</AssemblyVersion>
       <FileVersion>$(Version)</FileVersion>
       <InformationalVersion>$(Version)</InformationalVersion>
@@ -16,7 +16,7 @@
     <RepositoryUrl>https://github.com/Burkhardt/ImgSeeder.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-      <PackageReleaseNotes>4.2.0 coordinated seven-package dependency alignment; no ImgSeeder CLI behavior change from 4.1.0.</PackageReleaseNotes>
+      <PackageReleaseNotes>4.2.1 CLI maintenance release: embedded Nerd Font help glyphs, corrected option alignment, and terminal clipping tolerance; RAIkeep library dependencies remain on 4.2.0.</PackageReleaseNotes>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
