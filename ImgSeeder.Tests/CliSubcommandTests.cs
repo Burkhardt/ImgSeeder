@@ -107,14 +107,30 @@ public sealed class CliSubcommandTests : IDisposable
 		var help = RunIorg("organize", "--help", "--nologo");
 		Assert.Equal(0, help.exitCode);
 
-		var lines = help.output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+		var lines = help.output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+			.Select(line => line.TrimEnd('\r'))
+			.ToArray();
 		var cloud = Assert.Single(lines, line => line.StartsWith("-c|--cloud:", StringComparison.Ordinal));
 		var pathConvention = Assert.Single(lines, line => line.StartsWith("-p|--pathconv:", StringComparison.Ordinal));
 		var namingConvention = Assert.Single(lines, line => line.StartsWith("-n|--nameconv:", StringComparison.Ordinal));
 
-		Assert.Equal(15, cloud.IndexOf('①'));
-		Assert.Equal(15, pathConvention.IndexOf('①'));
-		Assert.Equal(15, namingConvention.IndexOf('①'));
+		var firstProvider = Assert.Single(Messages.CloudProviderOptions().Take(1));
+		var providerIcon = firstProvider.ToLowerInvariant() switch
+		{
+			"dropbox" => Icons.DropboxBoxOutline,
+			"googledrive" => Icons.GoogleDriveBoxOutline,
+			"iclouddrive" => Icons.ICloudDriveBoxOutline,
+			"onedrive" => Icons.OneDriveBoxOutline,
+			_ => throw new Xunit.Sdk.XunitException($"Unexpected configured cloud provider: {firstProvider}")
+		};
+		Assert.False(string.IsNullOrEmpty(providerIcon));
+		Assert.Equal(15, cloud.IndexOf(providerIcon, StringComparison.Ordinal));
+		Assert.Equal(15, pathConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
+		Assert.Equal(15, namingConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
+		Assert.DoesNotContain("①", help.output, StringComparison.Ordinal);
+		Assert.EndsWith(Icons.HelpLineWidthCompensation, cloud, StringComparison.Ordinal);
+		Assert.EndsWith(Icons.HelpLineWidthCompensation, pathConvention, StringComparison.Ordinal);
+		Assert.EndsWith(Icons.HelpLineWidthCompensation, namingConvention, StringComparison.Ordinal);
 	}
 
 	[Fact]

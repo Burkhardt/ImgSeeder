@@ -1,5 +1,9 @@
 # ImgSeeder
 
+## Terminal font
+
+The `iorg` help screen uses embedded Nerd Font provider and numbered-option glyphs. See the RAIkeep [terminal font guide](https://github.com/Burkhardt/RAIkeep/blob/main/doc/TERMINAL_FONTS.md) for Blink, macOS, and Ubuntu setup.
+
 ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc/`](https://github.com/Burkhardt/RAIkeep/tree/main/doc) directory under `ImgSeeder_...` filenames; they are not stored separately in this child repository.
 
 The NuGet tool package includes the Burkhardt `HardCastle.png` package icon, matching the other RAIkeep packages.
