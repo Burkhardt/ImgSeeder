@@ -520,6 +520,8 @@ public static class ImageOrganizer
 
 internal static class Program
 {
+	private const int CommandHelpOptionWidth = 15;
+
 	private static int Main(string[] args)
 	{
 		if (args.Length > 0 && args[0] is "organize" or "clean")
@@ -845,13 +847,16 @@ internal static class Program
 		foreach (var line in lines)
 			Messages.WriteSuccess(line);
 		Messages.WriteInfo("Global options: -c|--cloud, -d|--debug, -l|--nologo");
-		Messages.WriteInfo($"-c|--cloud: {Messages.CloudDescription()}");
+		WriteCommandHelpOption("-c|--cloud:", Messages.CloudDescription());
 		if (command == "organize")
 		{
-			Messages.WriteInfo($"-p|--pathconv: {Messages.PathConventionDescription()}");
-			Messages.WriteInfo($"-n|--nameconv: {Messages.NamingConventionDescription()}");
+			WriteCommandHelpOption("-p|--pathconv:", Messages.PathConventionDescription());
+			WriteCommandHelpOption("-n|--nameconv:", Messages.NamingConventionDescription());
 		}
 	}
+
+	private static void WriteCommandHelpOption(string option, string description)
+		=> Messages.WriteInfo($"{option.PadRight(CommandHelpOptionWidth)}{description}");
 
 	private static string? RunBlockerReason(
 		RaiPath? sourceRoot,

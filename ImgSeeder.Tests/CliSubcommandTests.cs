@@ -102,6 +102,22 @@ public sealed class CliSubcommandTests : IDisposable
 	}
 
 	[Fact]
+	public void OrganizeHelp_AlignsNumberedOptionDescriptions()
+	{
+		var help = RunIorg("organize", "--help", "--nologo");
+		Assert.Equal(0, help.exitCode);
+
+		var lines = help.output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+		var cloud = Assert.Single(lines, line => line.StartsWith("-c|--cloud:", StringComparison.Ordinal));
+		var pathConvention = Assert.Single(lines, line => line.StartsWith("-p|--pathconv:", StringComparison.Ordinal));
+		var namingConvention = Assert.Single(lines, line => line.StartsWith("-n|--nameconv:", StringComparison.Ordinal));
+
+		Assert.Equal(15, cloud.IndexOf('①'));
+		Assert.Equal(15, pathConvention.IndexOf('①'));
+		Assert.Equal(15, namingConvention.IndexOf('①'));
+	}
+
+	[Fact]
 	public void Help_IdentifiesDefaults_AndRejectsCloudOutsideConfiguredDefaultOrder()
 	{
 		var help = RunIorg("--help", "--nologo");
