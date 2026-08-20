@@ -2,7 +2,14 @@
 
 ## Terminal font
 
-The `iorg` help screen uses embedded Nerd Font provider and numbered-option glyphs. See the RAIkeep [terminal font guide](https://github.com/Burkhardt/RAIkeep/blob/main/doc/TERMINAL_FONTS.md) for Blink, macOS, and Ubuntu setup.
+> **Font note:** The `iorg` help screen uses glyph icons from Nerd Fonts. Most
+> Nerd Font-patched fonts render correctly in most terminal environments. Blink
+> on iPadOS showed clipping and character-width problems with some choices; the
+> tested solution was Blink's
+> [Jet Brains Mono Nerd Font stylesheet](https://github.com/blinksh/patched-fonts/blob/main/Jet%20Brains%20Mono%20Nerd%20Font.css).
+> See the RAIkeep
+> [terminal font guide](https://github.com/Burkhardt/RAIkeep/blob/main/doc/TERMINAL_FONTS.md)
+> for Blink, macOS, and Ubuntu setup.
 
 ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc/`](https://github.com/Burkhardt/RAIkeep/tree/main/doc) directory under `ImgSeeder_...` filenames; they are not stored separately in this child repository.
 
@@ -11,6 +18,12 @@ The NuGet tool package includes the Burkhardt `HardCastle.png` package icon, mat
 ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `OneDrive`, `GoogleDrive`, and `ICloudDrive`.
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
+
+## 4.2.2
+
+- Aligns fallback dependencies on `JsonPit 4.2.2`, `OsLibCore 4.2.2`, `RaiUtils 4.2.2`, and `RaiImage 4.2.2` for the coordinated CR010 release.
+- Retains the `4.2.1` Nerd Font glyphs, corrected option alignment, Blink guidance, and terminal clipping tolerance unchanged.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.2.md)
 
 ## 4.2.1
 

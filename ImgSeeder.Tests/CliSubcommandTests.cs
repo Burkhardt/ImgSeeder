@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using ImgSeeder;
 using OsLib;
 using RaiImage;
@@ -161,11 +160,11 @@ public sealed class CliSubcommandTests : IDisposable
 	}
 
 	[Fact]
-	public void Version_PrintsPreparedPackageVersionAndInstalledCommandName()
+	public void IorgCommand_LiveSmoke_InvokesRealCliVersionAndInstalledCommandName()
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.2.1", run.output.Trim());
+		Assert.Equal("iorg v4.2.2", run.output.Trim());
 	}
 
 	private static TextFile WriteImage(RaiPath directory, string name, string extension)
@@ -212,20 +211,7 @@ public sealed class CliSubcommandTests : IDisposable
 		var dll = new RaiFile(new RaiPath(AppContext.BaseDirectory), "ImgSeeder", "dll");
 		Assert.True(dll.Exists(), $"Expected ImgSeeder.dll at {dll.FullName}");
 
-		var startInfo = new ProcessStartInfo("dotnet")
-		{
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			UseShellExecute = false
-		};
-		startInfo.ArgumentList.Add(dll.FullName);
-		foreach (var arg in args)
-			startInfo.ArgumentList.Add(arg);
-
-		using var process = Process.Start(startInfo)!;
-		var stdout = process.StandardOutput.ReadToEnd();
-		var stderr = process.StandardError.ReadToEnd();
-		process.WaitForExit();
-		return (process.ExitCode, stdout + stderr);
+		var result = IorgCommand.ForManagedAssembly(dll).Run(args);
+		return (result.ExitCode, result.Output);
 	}
 }
