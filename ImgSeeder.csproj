@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Title>ImgSeeder</Title>
     <Description>RAIkeep image organizer CLI for reorganizing flat image directories into RaiImage tree layouts.</Description>
-      <Version>4.2.4</Version>
+      <Version>4.2.5</Version>
       <AssemblyVersion>$(Version)</AssemblyVersion>
       <FileVersion>$(Version)</FileVersion>
       <InformationalVersion>$(Version)</InformationalVersion>
@@ -16,7 +16,7 @@
     <RepositoryUrl>https://github.com/Burkhardt/ImgSeeder.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-      <PackageReleaseNotes>4.2.4 adopts the accepted CR016 Unicode-safe RaiImage dependency line.</PackageReleaseNotes>
+      <PackageReleaseNotes>4.2.5 coordinated dependency release for accepted CR017.</PackageReleaseNotes>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -35,10 +35,10 @@
     <UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == '' and '$(ContinuousIntegrationBuild)' == 'true'">false</UseLocalRAIkeepSources>
     <UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == '' and '$(JsonPitProjectPath)' != '' and '$(OsLibProjectPath)' != '' and '$(RaiUtilsProjectPath)' != '' and '$(RaiImageProjectPath)' != ''">true</UseLocalRAIkeepSources>
     <UseLocalRAIkeepSources Condition="'$(UseLocalRAIkeepSources)' == ''">false</UseLocalRAIkeepSources>
-      <JsonPitPackageVersion Condition="'$(JsonPitPackageVersion)' == ''">4.2.4</JsonPitPackageVersion>
-      <OsLibPackageVersion Condition="'$(OsLibPackageVersion)' == ''">4.2.4</OsLibPackageVersion>
-      <RaiUtilsPackageVersion Condition="'$(RaiUtilsPackageVersion)' == ''">4.2.4</RaiUtilsPackageVersion>
-      <RaiImagePackageVersion Condition="'$(RaiImagePackageVersion)' == ''">4.2.4</RaiImagePackageVersion>
+      <JsonPitPackageVersion Condition="'$(JsonPitPackageVersion)' == ''">4.2.5</JsonPitPackageVersion>
+      <OsLibPackageVersion Condition="'$(OsLibPackageVersion)' == ''">4.2.5</OsLibPackageVersion>
+      <RaiUtilsPackageVersion Condition="'$(RaiUtilsPackageVersion)' == ''">4.2.5</RaiUtilsPackageVersion>
+      <RaiImagePackageVersion Condition="'$(RaiImagePackageVersion)' == ''">4.2.5</RaiImagePackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
