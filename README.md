@@ -19,6 +19,13 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
+## 4.2.6
+
+- Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.6 release implementing accepted CR019.
+- Aligns fallback dependencies on `JsonPit 4.2.6`, `OsLibCore 4.2.6`, `RaiUtils 4.2.6`, and `RaiImage 4.2.6`; `iorg` behavior is unchanged.
+- Reports `iorg v4.2.6` through the CLI version boundary.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.6.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.6.md)
+
 ## 4.2.5
 
 - Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.5 release implementing accepted CR017.
