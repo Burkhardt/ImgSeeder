@@ -19,6 +19,15 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
+## 4.2.7
+
+- Implements accepted CR020 with read-only recursive `iorg list <FileNamePattern>` discovery across image, `.puml`, and `.raid` artifacts.
+- Adds exact-ItemId `iorg move <SourceItemId> [TargetItemId]` for relocation, rename, and path-convention migration without disturbing bucket siblings.
+- Adds `iorg clean --cache` for explicit derivative cleanup and makes `iorg clean <ItemId> --force` remove the complete item file family.
+- Removes the misleading Legacy row from root help; `-r` remains the supported short spelling of `--root`.
+- Aligns all fallback package dependencies to 4.2.7 and reports `iorg v4.2.7`.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.7.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.7.md)
+
 ## 4.2.6
 
 - Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.6 release implementing accepted CR019.
@@ -142,29 +151,44 @@ With `-d`, each copied image is printed with full destination and source paths:
 
 The final summary reports how many detected source images were copied and groups any files that were not copied by failure reason.
 
-To inspect image deletion for an item without deleting files, use `clean` with a
-required `ShortName`:
+To inspect every file owned by an exact ItemId without deleting it, use `clean`:
 
 ```bash
-iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa
+iorg clean NomsaConcert -c OneDrive --root LiveAfricaStageImage/nomsa
 ```
 
-`ShortName` can be either `ItemId` or `ItemId_Nr`. By default, `clean` matches all
-images for that short name; `--cache` limits the operation to cached/rendered
-variants such as files with a template/name extension:
+This selects the complete exact-ItemId family, including numbered sources,
+rendered derivatives, `.puml`, `_config.puml`, and `.raid` files. It does not
+select a bucket-sharing ItemId with a similar prefix. Item cleanup is a dry run
+unless `--force` is supplied:
 
 ```bash
-iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa --cache
+iorg clean NomsaConcert -c OneDrive --root LiveAfricaStageImage/nomsa --force
 ```
 
-Delete commands are dry-run by default and list what would be deleted. Add `--force` to actually delete the matched files:
+To explicitly purge rendered derivatives throughout one subscriber tree while
+preserving source images and diagram artifacts, use the separate cache form:
 
 ```bash
-iorg clean NomsaConcert_11 -c OneDrive --root LiveAfricaStageImage/nomsa --cache --force
+iorg clean --cache -c OneDrive --root LiveAfricaStageImage/nomsa
 ```
 
-An unbounded clean is not supported: omitting `ShortName` is a validation error,
-including when `--force` is present.
+`--cache` is itself the explicit bounded operation and does not take an ItemId.
+
+Discover files without mutation:
+
+```bash
+iorg list 'WorkInPro*' -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa
+iorg list '*.puml' -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa
+```
+
+Move an exact ItemId family, optionally renaming it and selecting its destination
+path convention:
+
+```bash
+iorg move AfricanBrisket -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa --pathconv 3
+iorg move AfricanBrisket AfricanDinner -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa --pathconv 4
+```
 
 Useful options:
 
@@ -176,9 +200,9 @@ Useful options:
 - `-r`, `--root`: destination root; complete subscriber destination unless `--subscriber` is supplied
 - `--subscriber`: explicit subscriber identity when `--root` is the parent image root
 - `--source`: source image directory for `organize`
-- `--cache`: restrict `clean` to cached/rendered images
-- `--force`: perform the otherwise dry-run clean
-- `-p`, `--pathconv`: `1` CanonicalByName, `2` ItemIdTree3x3, or `3` ItemIdTree8x2 (default)
+- `--cache`: explicitly delete rendered derivatives while preserving source and diagram files
+- `--force`: perform the otherwise dry-run exact-ItemId clean
+- `-p`, `--pathconv`: `1` CanonicalByName, `2` ItemIdTree3x3, `3` ItemIdTree8x2 (default), or `4` Flat
 - `-n`, `--nameconv`: `1` Legacy, `2` ItemTemplate, or `3` Structured (default)
 
 Run `iorg <command> --help` for contextual options.
@@ -188,7 +212,7 @@ Run `iorg <command> --help` for contextual options.
 The existing flat `-s`, `-rm`, `-rmc`/`--rm-cache`, positional subscriber,
 `-p`, and `-n` forms remain supported throughout `4.x` and invoke the same
 handlers as command syntax. New scripts should use subcommands. The `5.x.x` line
-will require `organize` or `clean`. The root option is not deprecated:
+will require the applicable named subcommand. The root option is not deprecated:
 `-r` and `--root` are both supported by the new command parser. The `-p` and
 `-n` convention aliases likewise remain available, scoped to `organize`.
 

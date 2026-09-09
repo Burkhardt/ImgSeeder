@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using OsLib;
 using RaiImage;
 
@@ -61,9 +62,12 @@ public static class Messages
 		{
 			var lines = new List<string>
 			{
-				HelpLine("Commands", Icons.Info, "organize, clean (preferred 4.x syntax)"),
-				"  iorg organize --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3> (-n|--nameconv) <1|2|3>",
-				"  iorg clean <ShortName> (-r|--root) <dir> [--cache] [--force]",
+				HelpLine("Commands", Icons.Info, "organize, list, move, clean"),
+				"  iorg organize --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
+				"  iorg list <FileNamePattern> (-r|--root) <dir> [--subscriber <name>] [--json|--quiet]",
+				"  iorg move <SourceItemId> [<TargetItemId>] (-r|--root) <dir> [--subscriber <name>] [--pathconv <1|2|3|4>]",
+				"  iorg clean <ItemId> (-r|--root) <dir> [--force]",
+				"  iorg clean --cache (-r|--root) <dir>",
 				HelpLine("-h, --help", Icons.Help, "print out all options"),
 				HelpLine("-v, --version", Icons.Info, "print version info"),
 				HelpLine("-l, --nologo", BannerIcon(), "do not display the banner"),
@@ -72,10 +76,9 @@ public static class Messages
 				HelpLine("-s, --source", Icons.Folder, SourceDescription()),
 				HelpLine("-rm, --rm", Icons.File, "list images that would be deleted for ShortName"),
 				HelpLine("-rmc, --rm-cache", Icons.File, "list cached images that would be deleted for ShortName"),
-				HelpLine("--force", Icons.Force, "force delete for -rm or -rmc/--rm-cache"),
+				HelpLine("--force", Icons.Force, "perform exact-ItemId deletion (or legacy -rm/-rmc)"),
 				HelpLine("-p, --pathconv", SelectedOptionIcon(PathConvention), PathConventionDescription()),
 				HelpLine("-n, --nameconv", SelectedOptionIcon(NamingConvention), NamingConventionDescription()),
-				HelpLine("Legacy", Icons.Info, "flat operation syntax remains supported in 4.x; use commands before 5.x"),
 			};
 
 			if (SourceRoot != null)
@@ -281,6 +284,7 @@ public static class ImageOrganizer
 	public sealed record ImageCopyFailure(string SourceName, string SourceFullName, string Problem, string ErrorType);
 	public sealed record ImageDeleteSuccess(string Name, string FullName);
 	public sealed record ImageDeleteFailure(string Name, string FullName, string Problem, string ErrorType);
+	public sealed record ItemMove(string SourceFullName, string DestinationFullName);
 
 	public sealed class ImageOrganizeReport
 	{
@@ -314,6 +318,61 @@ public static class ImageOrganizer
 		public List<ImageDeleteFailure> Failed { get; } = [];
 		public int DeletedCount => Deleted.Count;
 		public int FailedCount => Failed.Count;
+	}
+
+	public static IReadOnlyList<RaiFile> ListTreeFiles(RaiPath subscriberRoot, string fileNamePattern)
+	{
+		ArgumentNullException.ThrowIfNull(subscriberRoot);
+		if (string.IsNullOrWhiteSpace(fileNamePattern)
+			|| fileNamePattern.Contains('/')
+			|| fileNamePattern.Contains('\\'))
+			throw new ArgumentException("FileNamePattern must be one filename pattern, not a path.", nameof(fileNamePattern));
+		if (!subscriberRoot.Exists())
+			return Array.Empty<RaiFile>();
+
+		return subscriberRoot
+			.EnumerateFiles(fileNamePattern, recursive: true)
+			.Where(IsManagedTreeArtifact)
+			.OrderBy(file => file.FullName, StringComparer.Ordinal)
+			.ToList();
+	}
+
+	public static IReadOnlyList<ItemMove> MoveItem(
+		RaiPath subscriberRoot,
+		string sourceItemId,
+		string? targetItemId = null,
+		PathConventionType targetConvention = PathConventionType.ItemIdTree8x2)
+	{
+		ArgumentNullException.ThrowIfNull(subscriberRoot);
+		ValidateItemId(sourceItemId, nameof(sourceItemId));
+		if (targetItemId != null)
+			ValidateItemId(targetItemId, nameof(targetItemId));
+		var destinationId = string.IsNullOrWhiteSpace(targetItemId) ? sourceItemId : targetItemId;
+
+		var sourceHomes = Enum.GetValues<PathConventionType>()
+			.Select(convention => new ItemTreePath(subscriberRoot, sourceItemId, convention))
+			.Select(home => (Home: home, Files: home.SelectFiles()))
+			.Where(candidate => candidate.Files.Count > 0)
+			.GroupBy(candidate => candidate.Home.SubdirRoot.FullPath, StringComparer.OrdinalIgnoreCase)
+			.Select(group => group.First())
+			.ToList();
+		if (sourceHomes.Count == 0)
+			throw new RaiImageNotFoundException(
+				$"No files were found for ItemId '{sourceItemId}' under '{subscriberRoot.FullPath}'.");
+		if (sourceHomes.Count > 1)
+			throw new RaiImageIOException(
+				$"ItemId '{sourceItemId}' exists under multiple path conventions. Resolve the duplicate placement before moving it.");
+
+		var source = sourceHomes[0];
+		var destination = new ItemTreePath(subscriberRoot, destinationId!, targetConvention);
+		var oldNames = source.Files.Select(file => file.FullName).ToArray();
+		var moved = destination.mv(source.Home);
+
+		return oldNames.Zip(
+			moved,
+			(sourceFullName, destinationFile) => new ItemMove(sourceFullName, destinationFile.FullName))
+			.Where(move => !string.Equals(move.SourceFullName, move.DestinationFullName, StringComparison.Ordinal))
+			.ToList();
 	}
 
 	public static int Organize(
@@ -442,6 +501,80 @@ public static class ImageOrganizer
 		return report;
 	}
 
+	public static ImageDeleteReport CleanItem(
+		RaiPath subscriberRoot,
+		string itemId,
+		bool force,
+		TextWriter? output = null,
+		bool debug = false)
+	{
+		ArgumentNullException.ThrowIfNull(subscriberRoot);
+		ValidateItemId(itemId, nameof(itemId));
+		var homes = Enum.GetValues<PathConventionType>()
+			.Select(convention => new ItemTreePath(subscriberRoot, itemId, convention))
+			.Select(home => (Home: home, Files: home.SelectFiles()))
+			.Where(candidate => candidate.Files.Count > 0)
+			.GroupBy(candidate => candidate.Home.SubdirRoot.FullPath, StringComparer.OrdinalIgnoreCase)
+			.Select(group => group.First())
+			.ToList();
+		var files = homes
+			.SelectMany(candidate => candidate.Files)
+			.GroupBy(file => file.FullName, StringComparer.Ordinal)
+			.Select(group => group.First())
+			.OrderBy(file => file.FullName, StringComparer.Ordinal)
+			.ToList();
+		var report = DeleteFiles(itemId, files, cacheOnly: false, force, output, debug);
+		if (force && report.FailedCount == 0)
+			foreach (var home in homes.Select(candidate => candidate.Home))
+				home.PruneEmptyDirectories();
+		return report;
+	}
+
+	public static ImageDeleteReport CleanCache(
+		RaiPath subscriberRoot,
+		TextWriter? output = null,
+		bool debug = false)
+	{
+		ArgumentNullException.ThrowIfNull(subscriberRoot);
+		var files = subscriberRoot.Exists()
+			? subscriberRoot.EnumerateFiles("*", recursive: true)
+				.Where(IsRenderedDerivative)
+				.OrderBy(file => file.FullName, StringComparer.Ordinal)
+				.ToList()
+			: [];
+		return DeleteFiles("cache", files, cacheOnly: true, force: true, output, debug);
+	}
+
+	private static ImageDeleteReport DeleteFiles(
+		string target,
+		IReadOnlyList<RaiFile> files,
+		bool cacheOnly,
+		bool force,
+		TextWriter? output,
+		bool debug)
+	{
+		var report = new ImageDeleteReport(target, cacheOnly, force, files.Count);
+		output ??= Console.Out;
+		foreach (var file in files)
+		{
+			try
+			{
+				if (force)
+					file.rm();
+				report.Deleted.Add(new ImageDeleteSuccess(file.NameWithExtension, file.FullName));
+				output.WriteLine(DeleteLine(file, cacheOnly, force, debug));
+			}
+			catch (Exception ex) when (IsPerFileFailure(ex))
+			{
+				report.Failed.Add(new ImageDeleteFailure(file.NameWithExtension, file.FullName, ProblemDescription(ex), ex.GetType().Name));
+				output.WriteLine(debug
+					? $"not deleted: {file.FullName}; {ex.GetType().Name}: {ex.Message}"
+					: $"not deleted: {file.NameWithExtension}");
+			}
+		}
+		return report;
+	}
+
 	private static IEnumerable<RaiFile> EnumerateImageFiles(RaiPath sourceRoot)
 	{
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -456,12 +589,41 @@ public static class ImageOrganizer
 		}
 	}
 
+	private static bool IsManagedTreeArtifact(RaiFile file)
+	{
+		var ext = file.Ext.TrimStart('.');
+		if (ext.Equals("puml", StringComparison.OrdinalIgnoreCase)
+			|| ext.Equals("raid", StringComparison.OrdinalIgnoreCase))
+			return true;
+		return DeleteExtensions().Contains(ext);
+	}
+
+	private static bool IsRenderedDerivative(RaiFile file)
+	{
+		if (!DeleteExtensions().Contains(file.Ext.TrimStart('.')))
+			return false;
+		if (file.Ext.Equals("webp", StringComparison.OrdinalIgnoreCase)
+			|| file.Ext.Equals("avif", StringComparison.OrdinalIgnoreCase))
+			return true;
+
+		var structured = new ImageFile(file.FullName, ImageNamingConvention.Structured);
+		return IsCacheImage(structured);
+	}
+
+	private static void ValidateItemId(string itemId, string parameterName)
+	{
+		if (string.IsNullOrWhiteSpace(itemId)
+			|| itemId.Contains('/')
+			|| itemId.Contains('\\'))
+			throw new ArgumentException("ItemId must be one plain item identifier.", parameterName);
+	}
+
 	private static ImageFile ParseShortName(string shortName)
 	{
 		if (shortName.Contains('/') || shortName.Contains('\\'))
 			throw new ArgumentException("ShortName must be ItemId or ItemId_Nr, not a path.", nameof(shortName));
 
-		var stem = System.IO.Path.GetFileNameWithoutExtension(shortName.Trim());
+		var stem = new RaiFile(shortName.Trim()).Name;
 		if (string.IsNullOrWhiteSpace(stem))
 			throw new ArgumentException("ShortName is required.", nameof(shortName));
 
@@ -514,7 +676,7 @@ public static class ImageOrganizer
 			|| !string.IsNullOrWhiteSpace(image.TileNumber);
 	}
 
-	private static string DeleteLine(ImageTreeFile candidate, bool cacheOnly, bool force, bool debug)
+	private static string DeleteLine(RaiFile candidate, bool cacheOnly, bool force, bool debug)
 	{
 		var action = force ? "deleted" : "would delete";
 		var kind = cacheOnly ? " cached" : string.Empty;
@@ -543,7 +705,7 @@ internal static class Program
 
 	private static int Main(string[] args)
 	{
-		if (args.Length > 0 && args[0] is "organize" or "clean")
+		if (args.Length > 0 && args[0] is "organize" or "list" or "move" or "clean")
 			return RunCommand(args[0], args[1..]);
 
 		return RunMappedArguments(args);
@@ -697,6 +859,8 @@ internal static class Program
 			return command switch
 			{
 				"organize" => RunOrganizeCommand(args),
+				"list" => RunListCommand(args),
+				"move" => RunMoveCommand(args),
 				"clean" => RunCleanCommand(args),
 				_ => throw new ArgumentException($"Unknown command '{command}'.")
 			};
@@ -745,8 +909,13 @@ internal static class Program
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--cache", "--force"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
-		if (positionals.Count != 1)
-			throw new ArgumentException("clean requires exactly one <ShortName>; an unbounded delete is not supported.");
+		var cacheOnly = HasOption(args, "--cache");
+		if (cacheOnly && positionals.Count != 0)
+			throw new ArgumentException("clean --cache does not accept an ItemId.");
+		if (cacheOnly && HasOption(args, "--force"))
+			throw new ArgumentException("clean --cache is already explicit and does not accept --force.");
+		if (!cacheOnly && positionals.Count != 1)
+			throw new ArgumentException("clean requires exactly one <ItemId>, unless --cache is selected.");
 
 		var root = RequiredCommandValue(args, "--root", "-r");
 		var rootBinding = BindCommandRoot(
@@ -754,11 +923,91 @@ internal static class Program
 			Messages.CloudProvider,
 			ParamValue(args, "--subscriber"),
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
-		var mapped = CommandGlobalArguments(args, rootBinding);
-		mapped.AddRange([HasOption(args, "--cache") ? "-rmc" : "-rm", positionals[0], rootBinding.Subscriber]);
-		if (HasOption(args, "--force"))
-			mapped.Add("--force");
-		return RunMappedArguments(mapped.ToArray());
+		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
+		var report = cacheOnly
+			? ImageOrganizer.CleanCache(subscriberRoot, debug: HasOption(args, "-d", "--debug"))
+			: ImageOrganizer.CleanItem(
+				subscriberRoot,
+				positionals[0],
+				HasOption(args, "--force"),
+				debug: HasOption(args, "-d", "--debug"));
+		Messages.WriteSuccess($"{report.DeletedCount} file(s) {(report.Force ? "deleted" : "selected for deletion")}.");
+		return report.FailedCount == 0 ? 0 : 1;
+	}
+
+	private static int RunListCommand(string[] args)
+	{
+		var valueOptions = CommandGlobalValueOptions
+			.Concat(["-r", "--root", "--subscriber"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
+		if (positionals.Count != 1)
+			throw new ArgumentException("list requires exactly one <FileNamePattern>.");
+		if (HasOption(args, "--json") && HasOption(args, "--quiet"))
+			throw new ArgumentException("Use only one of --json or --quiet.");
+
+		var rootBinding = BindCommandRoot(
+			RequiredCommandValue(args, "--root", "-r"),
+			Messages.CloudProvider,
+			ParamValue(args, "--subscriber"),
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
+		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, positionals[0]);
+
+		if (HasOption(args, "--json"))
+			Console.WriteLine(JsonSerializer.Serialize(files.Select(file => file.NameWithExtension)));
+		else
+		{
+			foreach (var file in files)
+				Console.WriteLine(HasOption(args, "--quiet") ? file.FullName : file.NameWithExtension);
+			if (!HasOption(args, "--quiet"))
+				Messages.WriteSuccess($"{files.Count} matching file(s).");
+		}
+		return 0;
+	}
+
+	private static int RunMoveCommand(string[] args)
+	{
+		var valueOptions = CommandGlobalValueOptions
+			.Concat(["-r", "--root", "--subscriber", "-p", "--pathconv"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
+		if (positionals.Count is < 1 or > 2)
+			throw new ArgumentException("move requires <SourceItemId> and accepts one optional <TargetItemId>.");
+		if (HasOption(args, "--json") && HasOption(args, "--quiet"))
+			throw new ArgumentException("Use only one of --json or --quiet.");
+
+		var pathValue = ParamValue(args, "--pathconv", "-p");
+		if (!TryParseCommandPathConvention(pathValue, out var pathConvention))
+			throw new ArgumentException($"Invalid PathConventionType: {pathValue}.");
+		var rootBinding = BindCommandRoot(
+			RequiredCommandValue(args, "--root", "-r"),
+			Messages.CloudProvider,
+			ParamValue(args, "--subscriber"),
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
+		var moves = ImageOrganizer.MoveItem(
+			subscriberRoot,
+			positionals[0],
+			positionals.Count == 2 ? positionals[1] : null,
+			pathConvention);
+
+		if (HasOption(args, "--json"))
+			Console.WriteLine(JsonSerializer.Serialize(moves));
+		else
+		{
+			foreach (var move in moves)
+				Console.WriteLine(HasOption(args, "--quiet")
+					? move.DestinationFullName
+					: $"{move.SourceFullName} -> {move.DestinationFullName}");
+			if (!HasOption(args, "--quiet"))
+				Messages.WriteSuccess($"{moves.Count} file(s) moved.");
+		}
+		return 0;
 	}
 
 	private sealed record CommandRootBinding(string Root, string Subscriber, string? CloudProvider);
@@ -791,6 +1040,14 @@ internal static class Program
 			mapped.AddRange(["--cloud", rootBinding.CloudProvider]);
 		mapped.AddRange(["--root", rootBinding.Root]);
 		return mapped;
+	}
+
+	private static RaiPath ResolveCommandSubscriberRoot(CommandRootBinding rootBinding)
+	{
+		var root = ResolveImageRoot(rootBinding.CloudProvider, rootBinding.Root)
+			?? throw new ArgumentException("The ImageTree root could not be resolved.");
+		return ResolveDestinationRoot(root, rootBinding.Subscriber)
+			?? throw new ArgumentException("The subscriber root could not be resolved.");
 	}
 
 	private static readonly string[] CommandGlobalValueOptions =
@@ -847,19 +1104,42 @@ internal static class Program
 		return names[number - 1];
 	}
 
+	private static bool TryParseCommandPathConvention(string? value, out PathConventionType convention)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+		{
+			convention = Messages.DefaultPathConvention;
+			return true;
+		}
+		var normalized = NormalizeNumberedCommandEnum<PathConventionType>(value, "--pathconv");
+		return Enum.TryParse(normalized, ignoreCase: true, out convention)
+			&& Enum.IsDefined(convention);
+	}
+
 	private static void WriteCommandHelp(string command)
 	{
 		var lines = command switch
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | --subscriber <name>] --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3> (-n|--nameconv) <1|2|3> [global options]",
+				"Usage: iorg organize [<Subscriber> | --subscriber <name>] --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
+			},
+			"list" => new[]
+			{
+				"Usage: iorg list <FileNamePattern> [--subscriber <name>] (-r|--root) <dir> [--json|--quiet] [global options]",
+				"List is strictly read-only and includes image, .puml, and .raid artifacts."
+			},
+			"move" => new[]
+			{
+				"Usage: iorg move <SourceItemId> [<TargetItemId>] [--subscriber <name>] (-r|--root) <dir> [--pathconv <1|2|3|4>] [--json|--quiet] [global options]",
+				"Path conventions: 1 CanonicalByName, 2 ItemIdTree3x3, 3 ItemIdTree8x2 (default), 4 Flat."
 			},
 			"clean" => new[]
 			{
-				"Usage: iorg clean <ShortName> [--subscriber <name>] (-r|--root) <dir> [--cache] [--force] [global options]",
-				"Clean is a dry run unless --force is present; an unbounded delete is never inferred."
+				"Usage: iorg clean <ItemId> [--subscriber <name>] (-r|--root) <dir> [--force] [global options]",
+				"       iorg clean --cache [--subscriber <name>] (-r|--root) <dir> [global options]",
+				"Item cleanup is a dry run unless --force is present; --cache explicitly deletes only rendered derivatives."
 			},
 			_ => Array.Empty<string>()
 		};
@@ -867,11 +1147,10 @@ internal static class Program
 			Messages.WriteSuccess(line);
 		Messages.WriteInfo("Global options: -c|--cloud, -d|--debug, -l|--nologo");
 		WriteCommandHelpOption("-c|--cloud:", Messages.CloudDescription());
-		if (command == "organize")
-		{
+		if (command is "organize" or "move")
 			WriteCommandHelpOption("-p|--pathconv:", Messages.PathConventionDescription());
+		if (command == "organize")
 			WriteCommandHelpOption("-n|--nameconv:", Messages.NamingConventionDescription());
-		}
 	}
 
 	private static void WriteCommandHelpOption(string option, string description)
