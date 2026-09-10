@@ -21,6 +21,15 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
+## 4.2.10
+
+- Adds `-a, --app` for application-root addressing; iorg appends the conventional `Image` segment.
+- Adds preferred `-t, --tenant`; `--subscriber` remains a compatibility alias.
+- Keeps `-r, --root` as the exact ImageTree-root alternative. `--root` and `--app` are mutually exclusive, and app-root addressing requires a tenant.
+- Corrects root and contextual help alignment, documents the legacy unnamed subscriber only when it was actually used, and consistently shows `(-p|--pathconv)`.
+- Aligns fallback package dependencies to 4.2.10 and reports `iorg v4.2.10`.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.10.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.10.md)
+
 ## 4.2.9
 
 - Implements accepted incident corrective action CR022 by removing the TempDir subscriber staging tree.
@@ -130,15 +139,16 @@ sudo dotnet tool update ImgSeeder --tool-path /usr/local/bin
 Typical cloud-rooted usage:
 
 ```bash
-iorg organize -c OneDrive --root LiveAfricaStageImage/nomsa \
+iorg organize -c OneDrive --app AIA --tenant nomsa \
   --source /Users/Shared/ServerData/GDriveData/TestAfricaStage/Images/NOMSA.net/ \
   --pathconv 3 --nameconv 3
 ```
 
-The command resolves `-c` through `Os.Config.Cloud`. When `--subscriber` is
-omitted, `--root` is the complete subscriber destination and its final directory
-name supplies the subscriber identity. Alternatively, provide a parent image root
-and `--subscriber <name>` explicitly.
+The command resolves `-c` through `Os.Config.Cloud`. `--app AIA --tenant nomsa`
+resolves `<configured cloud>/AIA/Image/nomsa`. Use `-r, --root` instead when the
+argument is already the exact ImageTree root; an explicit `-t, --tenant` is
+appended, or, when omitted, the final root segment remains the inferred tenant.
+`--subscriber` remains a compatibility alias for `--tenant`.
 
 When `-c`/`--cloud` is omitted, `iorg` selects the first provider in the
 configured `Os.Config.DefaultCloudOrder` that also has a non-empty `Cloud` path.
@@ -196,16 +206,16 @@ iorg clean --cache -c OneDrive --root LiveAfricaStageImage/nomsa
 Discover files without mutation:
 
 ```bash
-iorg list 'WorkInPro*' -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa
-iorg list '*.puml' -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa
+iorg list 'WorkInPro*' -c OneDrive --app AIA --tenant Nomsa
+iorg list '*.puml' -c OneDrive --root LiveAfricaStageImage --tenant Nomsa
 ```
 
 Move an exact ItemId family, optionally renaming it and selecting its destination
 path convention:
 
 ```bash
-iorg move AfricanBrisket -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa --pathconv 3
-iorg move AfricanBrisket AfricanDinner -c OneDrive --root LiveAfricaStageImage --subscriber Nomsa --pathconv 4
+iorg move AfricanBrisket -c OneDrive --app AIA --tenant Nomsa --pathconv 3
+iorg move AfricanBrisket AfricanDinner -c OneDrive --root LiveAfricaStageImage --tenant Nomsa --pathconv 4
 ```
 
 Useful options:
@@ -215,8 +225,10 @@ Useful options:
 - `-l`, `--nologo`: hide banner
 - `-d`, `--debug`: enable debug output
 - `-c`, `--cloud`: configured provider from `Os.Config.DefaultCloudOrder`; defaults to its first available entry
-- `-r`, `--root`: destination root; complete subscriber destination unless `--subscriber` is supplied
-- `--subscriber`: explicit subscriber identity when `--root` is the parent image root
+- `-r`, `--root`: exact ImageTree root; alternative to `--app`
+- `-a`, `--app`: application root; iorg appends `Image`; requires a tenant
+- `-t`, `--tenant`: explicit tenant/subscriber below the ImageTree root
+- `--subscriber`: compatibility alias for `--tenant`
 - `--source`: source image directory for `organize`
 - `--cache`: explicitly delete rendered derivatives while preserving source and diagram files
 - `--force`: perform the otherwise dry-run exact-ItemId clean

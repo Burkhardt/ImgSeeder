@@ -139,14 +139,89 @@ public sealed class CliSubcommandTests : IDisposable
 
 		var moveHelp = RunIorg("move", "--help");
 		Assert.Equal(0, moveHelp.exitCode);
-		Assert.Contains("--pathconv", moveHelp.output);
+		Assert.Contains("[(-p|--pathconv) <1|2|3|4>]", moveHelp.output);
+		Assert.Contains("[(-t|--tenant) <name>]", moveHelp.output);
+		Assert.DoesNotContain("[--subscriber <name>]", moveHelp.output);
 		Assert.DoesNotContain("--nameconv", moveHelp.output);
+
+		var listHelp = RunIorg("list", "--help");
+		Assert.Equal(0, listHelp.exitCode);
+		Assert.Contains("[(-t|--tenant) <name>]", listHelp.output);
+		Assert.DoesNotContain("[--subscriber <name>]", listHelp.output);
 
 		var rootHelp = RunIorg("--help");
 		Assert.Equal(0, rootHelp.exitCode);
 		Assert.DoesNotContain("===", rootHelp.output, StringComparison.Ordinal);
 		Assert.Contains("organize, list, move, clean", rootHelp.output, StringComparison.OrdinalIgnoreCase);
 		Assert.DoesNotContain("flat operation syntax remains supported", rootHelp.output, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public void ListCommand_AppRootAndTenantResolveConventionalImageTree()
+	{
+		var appRoot = root / "app-root-list";
+		var item = new ItemTreePath(appRoot / "Image" / "nomsa", "WorkInProgress");
+		WriteArtifact(item, "WorkInProgress.svg");
+
+		var run = RunIorg(
+			"list", "WorkInPro*", "-a", appRoot.FullPath,
+			"-t", "nomsa", "--json", "--nologo");
+		var exactRoot = RunIorg(
+			"list", "WorkInPro*", "--root", (appRoot / "Image" / "nomsa").FullPath,
+			"--json", "--nologo");
+
+		Assert.Equal(0, run.exitCode);
+		Assert.Equal("[\"WorkInProgress.svg\"]", run.output.Trim());
+		Assert.Equal(0, exactRoot.exitCode);
+		Assert.Equal(run.output, exactRoot.output);
+	}
+
+	[Fact]
+	public void ListCommand_TenantLongAliasUsesExactImageTreeRoot()
+	{
+		var imageTreeRoot = root / "tenant-alias-list";
+		var item = new ItemTreePath(imageTreeRoot / "nomsa", "WorkInProgress");
+		WriteArtifact(item, "WorkInProgress.raid");
+
+		var run = RunIorg(
+			"list", "*", "--root", imageTreeRoot.FullPath,
+			"--tenant", "nomsa", "--json", "--nologo");
+
+		Assert.Equal(0, run.exitCode);
+		Assert.Equal("[\"WorkInProgress.raid\"]", run.output.Trim());
+	}
+
+	[Fact]
+	public void CommandRootOptions_AreMutuallyExclusive_AndAppRequiresTenant()
+	{
+		var both = RunIorg(
+			"list", "*", "--root", (root / "images").FullPath,
+			"--app", (root / "app").FullPath, "--tenant", "nomsa", "--nologo");
+		Assert.Equal(1, both.exitCode);
+		Assert.Contains("Use only one of -r/--root or -a/--app", both.output);
+
+		var missingTenant = RunIorg(
+			"list", "*", "--app", (root / "app").FullPath, "--nologo");
+		Assert.Equal(1, missingTenant.exitCode);
+		Assert.Contains("-a/--app requires -t/--tenant", missingTenant.output);
+	}
+
+	[Fact]
+	public void LegacyUnnamedSubscriber_IsShownOnAlignedTenantHelpRow()
+	{
+		var help = RunIorg("--help", "--nologo", "nomsa");
+		Assert.Equal(0, help.exitCode);
+
+		var lines = help.output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+			.Select(line => line.TrimEnd('\r'))
+			.ToArray();
+		var tenant = Assert.Single(lines, line => line.StartsWith("-t, --tenant", StringComparison.Ordinal));
+		var rootOption = Assert.Single(lines, line => line.StartsWith("-r, --root", StringComparison.Ordinal));
+
+		Assert.Contains("nomsa (unnamed subscriber accepted for backward compatibility)", tenant);
+		Assert.Equal(
+			rootOption.IndexOf(Icons.Folder.ToString(), StringComparison.Ordinal),
+			tenant.IndexOf(Icons.Folder.ToString(), StringComparison.Ordinal));
 	}
 
 	[Fact]
@@ -445,7 +520,7 @@ public sealed class CliSubcommandTests : IDisposable
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.2.9", run.output.Trim());
+		Assert.Equal("iorg v4.2.10", run.output.Trim());
 	}
 
 	private static TextFile WriteImage(RaiPath directory, string name, string extension)

@@ -48,9 +48,11 @@ public static class Messages
 	public static RaiPath? DestinationRoot { get; set; }
 	public static RaiPath? ImageRoot { get; set; }
 	public static string? RootParam { get; set; }
+	public static string? AppParam { get; set; }
 	public static int? SourceImageCount { get; set; }
 	public static RaiPath? SourceRoot { get; set; }
 	public static string? Subscriber { get; set; }
+	public static bool SubscriberWasPositional { get; set; }
 	public const PathConventionType DefaultPathConvention = PathConventionType.ItemIdTree8x2;
 	public const ImageNamingConvention DefaultNamingConvention = ImageNamingConvention.Structured;
 	public static PathConventionType PathConvention { get; set; } = DefaultPathConvention;
@@ -63,11 +65,11 @@ public static class Messages
 			var lines = new List<string>
 			{
 				HelpLine("Commands", Icons.Info, "organize, list, move, clean"),
-				"  iorg organize --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
-				"  iorg list <FileNamePattern> (-r|--root) <dir> [--subscriber <name>] [--json|--quiet]",
-				"  iorg move <SourceItemId> [<TargetItemId>] (-r|--root) <dir> [--subscriber <name>] [--pathconv <1|2|3|4>]",
-				"  iorg clean <ItemId> (-r|--root) <dir> [--force]",
-				"  iorg clean --cache (-r|--root) <dir>",
+				"  iorg organize --source <dir> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
+				"  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--json|--quiet]",
+				"  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]",
+				"  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--force]",
+				"  iorg clean --cache ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>]",
 				HelpLine("-h, --help", Icons.Help, "print out all options"),
 				HelpLine("-v, --version", Icons.Info, "print version info"),
 				HelpLine("-l, --nologo", BannerIcon(), "do not display the banner"),
@@ -84,10 +86,9 @@ public static class Messages
 			if (SourceRoot != null)
 				lines.Add($"{Icons.Info} SourceImages\t{Icons.Folder}\t{SourceImageDescription()}");
 
-			if (!string.IsNullOrWhiteSpace(Subscriber))
-				lines.Add($"{Icons.Info} Subscriber\t{Icons.Folder}\t{Subscriber}");
-
 			lines.Add(HelpLine("-r, --root", Icons.Folder, RootDescription()));
+			lines.Add(HelpLine("-a, --app", Icons.Folder, AppDescription()));
+			lines.Add(HelpLine("-t, --tenant", Icons.Folder, SubscriberDescription()));
 			lines.Add($"ImageRoot: {ImageRootDescription()}");
 			return lines.ToArray();
 		}
@@ -215,7 +216,24 @@ public static class Messages
 	{
 		return !string.IsNullOrWhiteSpace(RootParam)
 			? RootParam
-			: "destination image root, resolved under --cloud when provided";
+			: "exact ImageTree root; alternative to -a/--app";
+	}
+
+	private static string AppDescription()
+	{
+		return !string.IsNullOrWhiteSpace(AppParam)
+			? $"{AppParam} (application root; Image is appended)"
+			: "application root; Image is appended; alternative to -r/--root";
+	}
+
+	private static string SubscriberDescription()
+	{
+		if (string.IsNullOrWhiteSpace(Subscriber))
+			return "subscriber/tenant below the ImageTree root; --subscriber is an alias";
+
+		return SubscriberWasPositional
+			? $"{Subscriber} (unnamed subscriber accepted for backward compatibility)"
+			: Subscriber;
 	}
 
 	private static string ImageRootDescription()
@@ -728,12 +746,20 @@ internal static class Program
 			var requestedCloudProvider = ParamValue(args, "-c", "--cloudprovider", "--cloud");
 			Messages.CloudProvider = ResolveCloudProvider(requestedCloudProvider);
 			var rootParam = ParamValue(args, "-r", "--root", "--imageroot");
+			var appParam = ParamValue(args, "-a", "--app");
+			EnsureAlternativeRoots(rootParam, appParam);
 			var sourceParam = ParamValue(args, "-s", "--source");
 			var deleteShortName = ParamValue(args, "-rm", "--rm");
 			var deleteCacheShortName = ParamValue(args, "-rmc", "--rm-cache", "-rm-cache");
 			var force = HasOption(args, "--force");
 			Messages.RootParam = rootParam;
-			Messages.Subscriber = PositionalArg(args);
+			Messages.AppParam = appParam;
+			var namedSubscriber = ParamValue(args, "-t", "--tenant", "--subscriber");
+			var positionalSubscriber = PositionalArg(args);
+			if (!string.IsNullOrWhiteSpace(namedSubscriber) && !string.IsNullOrWhiteSpace(positionalSubscriber))
+				throw new ArgumentException("Specify the subscriber either positionally or with -t/--tenant, not both.");
+			Messages.Subscriber = namedSubscriber ?? positionalSubscriber;
+			Messages.SubscriberWasPositional = namedSubscriber == null && positionalSubscriber != null;
 
 			if (!TryParseEnum(ParamValue(args, "-p", "--pathconv", "--path-conv"), out PathConventionType pathConvention))
 				return 1;
@@ -748,9 +774,11 @@ internal static class Program
 				: null;
 			var effectiveCloudProvider = EffectiveCloudProvider(
 				Messages.CloudProvider,
-				rootParam,
+				rootParam ?? appParam,
 				!string.IsNullOrWhiteSpace(requestedCloudProvider));
-			var imageRoot = ResolveImageRoot(effectiveCloudProvider, rootParam);
+			var imageRoot = ResolveImageRoot(effectiveCloudProvider, rootParam ?? appParam);
+			if (imageRoot != null && !string.IsNullOrWhiteSpace(appParam))
+				imageRoot /= "Image";
 			Messages.ImageRoot = imageRoot;
 			var destinationRoot = ResolveDestinationRoot(imageRoot, Messages.Subscriber);
 			Messages.DestinationRoot = destinationRoot;
@@ -877,7 +905,7 @@ internal static class Program
 	private static int RunOrganizeCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["--source", "-r", "--root", "-p", "--pathconv", "-n", "--nameconv", "--subscriber"])
+			.Concat(["--source", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
@@ -885,12 +913,12 @@ internal static class Program
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
 
 		var source = RequiredCommandValue(args, "--source");
-		var root = RequiredCommandValue(args, "--root", "-r");
+		var root = RequiredCommandRoot(args);
 		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(RequiredCommandValue(args, "--pathconv", "-p"), "--pathconv");
 		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(RequiredCommandValue(args, "--nameconv", "-n"), "--nameconv");
-		var subscriberOption = ParamValue(args, "--subscriber");
+		var subscriberOption = CommandSubscriber(args);
 		if (positionals.Count == 1 && !string.IsNullOrWhiteSpace(subscriberOption))
-			throw new ArgumentException("Specify the subscriber either positionally or with --subscriber, not both.");
+			throw new ArgumentException("Specify the subscriber either positionally or with -t/--tenant, not both.");
 
 		var rootBinding = BindCommandRoot(
 			root,
@@ -905,7 +933,7 @@ internal static class Program
 	private static int RunCleanCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "--subscriber"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--cache", "--force"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -918,11 +946,11 @@ internal static class Program
 		if (!cacheOnly && positionals.Count != 1)
 			throw new ArgumentException("clean requires exactly one <ItemId>, unless --cache is selected.");
 
-		var root = RequiredCommandValue(args, "--root", "-r");
+		var root = RequiredCommandRoot(args);
 		var rootBinding = BindCommandRoot(
 			root,
 			Messages.CloudProvider,
-			ParamValue(args, "--subscriber"),
+			CommandSubscriber(args),
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
 		var report = cacheOnly
@@ -939,7 +967,7 @@ internal static class Program
 	private static int RunListCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "--subscriber"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -950,9 +978,9 @@ internal static class Program
 			throw new ArgumentException("Use only one of --json or --quiet.");
 
 		var rootBinding = BindCommandRoot(
-			RequiredCommandValue(args, "--root", "-r"),
+			RequiredCommandRoot(args),
 			Messages.CloudProvider,
-			ParamValue(args, "--subscriber"),
+			CommandSubscriber(args),
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
 		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, positionals[0]);
@@ -972,7 +1000,7 @@ internal static class Program
 	private static int RunMoveCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "--subscriber", "-p", "--pathconv"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "-p", "--pathconv"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -986,9 +1014,9 @@ internal static class Program
 		if (!TryParseCommandPathConvention(pathValue, out var pathConvention))
 			throw new ArgumentException($"Invalid PathConventionType: {pathValue}.");
 		var rootBinding = BindCommandRoot(
-			RequiredCommandValue(args, "--root", "-r"),
+			RequiredCommandRoot(args),
 			Messages.CloudProvider,
-			ParamValue(args, "--subscriber"),
+			CommandSubscriber(args),
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
 		var moves = ImageOrganizer.MoveItem(
@@ -1011,23 +1039,31 @@ internal static class Program
 		return 0;
 	}
 
+	private sealed record CommandRootSelection(string Value, bool IsApplicationRoot);
 	private sealed record CommandRootBinding(string Root, string Subscriber, string? CloudProvider);
 
 	private static CommandRootBinding BindCommandRoot(
-		string root,
+		CommandRootSelection rootSelection,
 		string? cloudProvider,
 		string? subscriber,
 		bool cloudProviderExplicit)
 	{
+		var root = rootSelection.Value;
 		cloudProvider = EffectiveCloudProvider(cloudProvider, root, cloudProviderExplicit);
-		if (!string.IsNullOrWhiteSpace(subscriber))
-			return new CommandRootBinding(root, subscriber, cloudProvider);
-
 		var destination = ResolveImageRoot(cloudProvider, root)
 			?? throw new ArgumentException("The destination root could not be resolved.");
+		if (rootSelection.IsApplicationRoot)
+			destination /= "Image";
+
+		if (!string.IsNullOrWhiteSpace(subscriber))
+			return new CommandRootBinding(destination.FullPath, subscriber, null);
+
+		if (rootSelection.IsApplicationRoot)
+			throw new ArgumentException("-a/--app requires -t/--tenant <name>.");
+
 		var inferredSubscriber = destination.Segments.LastOrDefault();
 		if (string.IsNullOrWhiteSpace(inferredSubscriber))
-			throw new ArgumentException("Cannot infer a subscriber from --root; provide --subscriber <name>.");
+			throw new ArgumentException("Cannot infer a subscriber from --root; provide -t/--tenant <name>.");
 
 		return new CommandRootBinding(destination.Parent.FullPath, inferredSubscriber, null);
 	}
@@ -1060,6 +1096,29 @@ internal static class Program
 	[
 		"-h", "--help", "-v", "--version", "-d", "--debug", "-l", "--nologo"
 	];
+
+	private static CommandRootSelection RequiredCommandRoot(string[] args)
+	{
+		var root = ParamValue(args, "--root", "-r");
+		var app = ParamValue(args, "--app", "-a");
+		EnsureAlternativeRoots(root, app);
+
+		if (!string.IsNullOrWhiteSpace(root))
+			return new CommandRootSelection(root, IsApplicationRoot: false);
+		if (!string.IsNullOrWhiteSpace(app))
+			return new CommandRootSelection(app, IsApplicationRoot: true);
+
+		throw new ArgumentException("One of -r/--root or -a/--app is required.");
+	}
+
+	private static string? CommandSubscriber(string[] args)
+		=> ParamValue(args, "-t", "--tenant", "--subscriber");
+
+	private static void EnsureAlternativeRoots(string? root, string? app)
+	{
+		if (!string.IsNullOrWhiteSpace(root) && !string.IsNullOrWhiteSpace(app))
+			throw new ArgumentException("Use only one of -r/--root or -a/--app.");
+	}
 
 	private static List<string> ValidateCommandTokens(
 		string[] args,
@@ -1123,23 +1182,23 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | --subscriber <name>] --source <dir> (-r|--root) <dir> (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
+				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] --source <dir> ((-r|--root) <dir>|(-a|--app) <dir>) (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
 			{
-				"Usage: iorg list <FileNamePattern> [--subscriber <name>] (-r|--root) <dir> [--json|--quiet] [global options]",
+				"Usage: iorg list <FileNamePattern> [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
 				"List is strictly read-only and includes image, .puml, and .raid artifacts."
 			},
 			"move" => new[]
 			{
-				"Usage: iorg move <SourceItemId> [<TargetItemId>] [--subscriber <name>] (-r|--root) <dir> [--pathconv <1|2|3|4>] [--json|--quiet] [global options]",
+				"Usage: iorg move <SourceItemId> [<TargetItemId>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-p|--pathconv) <1|2|3|4>] [--json|--quiet] [global options]",
 				"Path conventions: 1 CanonicalByName, 2 ItemIdTree3x3, 3 ItemIdTree8x2 (default), 4 Flat."
 			},
 			"clean" => new[]
 			{
-				"Usage: iorg clean <ItemId> [--subscriber <name>] (-r|--root) <dir> [--force] [global options]",
-				"       iorg clean --cache [--subscriber <name>] (-r|--root) <dir> [global options]",
+				"Usage: iorg clean <ItemId> [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--force] [global options]",
+				"       iorg clean --cache [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [global options]",
 				"Item cleanup is a dry run unless --force is present; --cache explicitly deletes only rendered derivatives."
 			},
 			_ => Array.Empty<string>()
@@ -1148,6 +1207,9 @@ internal static class Program
 			Messages.WriteSuccess(line);
 		Messages.WriteInfo("Global options: -c|--cloud, -d|--debug, -l|--nologo");
 		WriteCommandHelpOption("-c|--cloud:", Messages.CloudDescription());
+		WriteCommandHelpOption("-r|--root:", "exact ImageTree root; alternative to -a|--app");
+		WriteCommandHelpOption("-a|--app:", "application root; Image is appended; alternative to -r|--root");
+		WriteCommandHelpOption("-t|--tenant:", "subscriber/tenant below the ImageTree root; --subscriber is an alias");
 		if (command is "organize" or "move")
 			WriteCommandHelpOption("-p|--pathconv:", Messages.PathConventionDescription());
 		if (command == "organize")
@@ -1373,6 +1435,7 @@ internal static class Program
 		{
 			"-h", "--help", "-v", "--version", "-l", "--nologo", "-d", "--debug",
 			"-c", "--cloudprovider", "--cloud", "-r", "--root", "--imageroot",
+			"-a", "--app", "-t", "--tenant", "--subscriber",
 			"-s", "--source", "-p", "--pathconv", "--path-conv",
 			"-n", "--nameconv", "--name-conv", "-rm", "--rm", "-rmc", "--rm-cache", "-rm-cache",
 			"--force"
