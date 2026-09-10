@@ -19,6 +19,15 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
 
+## 4.2.9
+
+- Implements accepted incident corrective action CR022 by removing the TempDir subscriber staging tree.
+- `iorg` organization writes each image directly to its final ItemTree pathname through RaiFile; it never moves a staged temporary file into a CloudDrive.
+- The optional `tempRoot` API parameter remains source/binary compatible but is intentionally behaviorally inert.
+- Aligns all fallback package dependencies to 4.2.9 and reports `iorg v4.2.9`.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.9.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.9.md)
+- Mandatory storage contract: [Cloud-Storage-In-Place-Invariant.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/Cloud-Storage-In-Place-Invariant.md)
+
 ## 4.2.8
 
 - Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.8 release implementing accepted CR021.

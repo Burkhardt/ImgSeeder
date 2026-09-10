@@ -385,6 +385,9 @@ public static class ImageOrganizer
 		TextWriter? output = null,
 		bool debug = false)
 	{
+		// Retained for source/binary compatibility in the v4.2 patch line. CR022
+		// forbids staging an artifact here before moving it into a CloudDrive.
+		_ = tempRoot;
 		return OrganizeWithReport(
 			sourceRoot,
 			subscriberRoot,
@@ -412,7 +415,9 @@ public static class ImageOrganizer
 		output ??= Console.Out;
 		var sources = EnumerateImageFiles(sourceRoot).ToList();
 		var report = new ImageOrganizeReport(sources.Count);
-		var stagingRoot = (tempRoot ?? Os.TempDir) / new RaiRelPath(subscriber);
+		// Retained for source/binary compatibility only; output is now written at
+		// its final ItemTree pathname and never staged beneath Os.TempDir.
+		_ = tempRoot;
 
 		foreach (var source in sources)
 		{
@@ -420,10 +425,6 @@ public static class ImageOrganizer
 			{
 				var normalizedFullName = ImageFile.EasyFileName(source.FullName);
 				var normalized = new ImageFile(normalizedFullName, namingConvention);
-				var staged = new RaiFile(stagingRoot, normalized.NameWithExtension);
-				staged.mkdir();
-				staged.cp(source);
-
 				var destination = new ImageTreeFile(
 					subscriberRoot,
 					normalized.ItemId,
@@ -435,7 +436,7 @@ public static class ImageOrganizer
 					ImageNumber = normalized.ImageNumber
 				};
 
-				destination.mv(staged);
+				destination.cp(source);
 				report.Copied.Add(new ImageCopySuccess(source.NameWithExtension, source.FullName, destination.FullName));
 				output.WriteLine(debug
 					? $"{destination.FullName} {Icons.ArrowLeft} {source.FullName}"

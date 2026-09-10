@@ -20,7 +20,7 @@ public class SourceImageStructuredTreeTests
 
 	[Theory]
 	[MemberData(nameof(MixedSourceNames))]
-	public void Organize_CopiesSourceThroughTempAndMovesStructuredNameInto8x2Tree(
+	public void Organize_WritesStructuredNameDirectlyInto8x2TreeWithoutTempStaging(
 		string sourceFileName,
 		string expectedItemId,
 		int expectedImageNumber,
@@ -70,6 +70,7 @@ public class SourceImageStructuredTreeTests
 			Assert.Equal(expectedTopdir, Assert.Single(expected.Topdir.Segments));
 			Assert.Equal(expectedSubdir, Assert.Single(expected.Subdir.Segments));
 			Assert.Equal(1, ImageOrganizer.CountSourceImages(testSourceRoot));
+			Assert.False(tempRoot.Exists());
 			Assert.Equal($"{testSourceFile.NameWithExtension}{Environment.NewLine}", output.ToString());
 		}
 		finally
@@ -119,10 +120,56 @@ public class SourceImageStructuredTreeTests
 			};
 
 			Assert.Equal($"{expected.FullName} {Icons.ArrowLeft} {testSourceFile.FullName}{Environment.NewLine}", output.ToString());
+			Assert.False(tempRoot.Exists());
 		}
 		finally
 		{
 			Cleanup(testRoot);
+		}
+	}
+
+	[Fact]
+	public void Organize_ConfiguredCloudDestination_WritesFinalFileDirectlyAndNeverCreatesStagingRoot()
+	{
+		var testRoot = NewTestRoot();
+		var cloudRoot = NewConfiguredCloudRoot();
+		try
+		{
+			var sourceRoot = (testRoot / "source").mkdir();
+			var source = new TextFile(sourceRoot, "African-Brisket-01", "png", "image bytes");
+			var stagingRoot = testRoot / "forbidden-staging";
+			using var output = new StringWriter();
+
+			var count = ImageOrganizer.Organize(
+				sourceRoot,
+				cloudRoot,
+				Subscriber,
+				PathConventionType.ItemIdTree8x2,
+				ImageNamingConvention.Structured,
+				stagingRoot,
+				output);
+
+			var destination = new ImageTreeFile(
+				cloudRoot,
+				"AfricanBrisket",
+				string.Empty,
+				"png",
+				PathConventionType.ItemIdTree8x2,
+				ImageNamingConvention.Structured)
+			{
+				ImageNumber = 1
+			};
+
+			Assert.Equal(1, count);
+			Assert.True(source.Exists());
+			Assert.True(destination.Exists());
+			Assert.Equal("image bytes", new TextFile(destination.FullName).ReadAllText().Trim());
+			Assert.False(stagingRoot.Exists());
+		}
+		finally
+		{
+			Cleanup(testRoot);
+			Cleanup(cloudRoot);
 		}
 	}
 
@@ -240,6 +287,21 @@ public class SourceImageStructuredTreeTests
 		Cleanup(root);
 		root.mkdir();
 		return root;
+	}
+
+	private static RaiPath NewConfiguredCloudRoot()
+	{
+		foreach (var provider in new[] { "OneDrive", "Dropbox", "GoogleDrive", "ICloudDrive" })
+		{
+			string? configured = Os.Config?.Cloud?[provider];
+			if (string.IsNullOrWhiteSpace(configured)) continue;
+			var providerRoot = new RaiPath(configured);
+			if (!providerRoot.Exists()) continue;
+			return (providerRoot / "RAIkeep" / "iorg-tests" / "cr022" / Guid.NewGuid().ToString("N")).mkdir();
+		}
+
+		Assert.Skip("No configured CloudDrive is available for the CR022 ImgSeeder direct-write test.");
+		throw new InvalidOperationException("Assert.Skip did not terminate the test.");
 	}
 
 	private static ImageTreeFile SeedImage(RaiPath subscriberRoot, string itemId, string nameExt, string ext, int imageNumber = ImageFile.NoImageNumber)
