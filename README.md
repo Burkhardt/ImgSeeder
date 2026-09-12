@@ -21,9 +21,15 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
-## 4.2.11
+## 4.3.0
 
-- Participates unchanged in coordinated RAIkeep v4.2.11.
+- Participates unchanged in coordinated RAIkeep v4.3.0.
+- Aligns fallback package dependencies to 4.3.0 and reports `iorg v4.3.0`.
+- Current release notes: [ImgSeeder_RELEASE_NOTES_4.3.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.3.0.md)
+
+## 4.2.11 (superseded before publication)
+
+- This prepared line was not published; its coordinated changes are carried by v4.3.0.
 - Aligns fallback package dependencies to 4.2.11 and reports `iorg v4.2.11`.
 - Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.11.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.11.md)
 
