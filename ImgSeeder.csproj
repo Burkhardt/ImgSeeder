@@ -9,6 +9,7 @@
       <InformationalVersion>$(Version)</InformationalVersion>
     <PackageId>ImgSeeder</PackageId>
     <Authors>Rainer Burkhardt</Authors>
+	<Copyright>© Rainer Burkhardt</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>HardCastle.png</PackageIcon>
