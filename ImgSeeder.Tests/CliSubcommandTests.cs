@@ -520,7 +520,7 @@ public sealed class CliSubcommandTests : IDisposable
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.3.2", run.output.Trim());
+		Assert.Equal("iorg v4.4.0", run.output.Trim());
 	}
 
 	private static TextFile WriteImage(RaiPath directory, string name, string extension)
