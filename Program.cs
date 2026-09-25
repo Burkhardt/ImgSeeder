@@ -721,11 +721,22 @@ public static class ImageOrganizer
 internal static class Program
 {
 	private const int CommandHelpOptionWidth = 15;
+	private static readonly string[] Commands = ["organize", "list", "move", "clean"];
 
 	private static int Main(string[] args)
 	{
-		if (args.Length > 0 && args[0] is "organize" or "list" or "move" or "clean")
+		if (HasOption(args, "-v", "--version"))
+			return RunMappedArguments(args);
+
+		if (args.Length > 0 && Commands.Contains(args[0], StringComparer.Ordinal))
 			return RunCommand(args[0], args[1..]);
+
+		if (!HasOption(args, "-h", "--help") &&
+			CliVerbDispatch.DetectMisplacedVerb("iorg", args, Commands) is { } diagnostic)
+		{
+			Console.Error.WriteLine(diagnostic.Message);
+			return 2;
+		}
 
 		return RunMappedArguments(args);
 	}
@@ -1094,7 +1105,7 @@ internal static class Program
 
 	private static readonly string[] CommandGlobalSwitchOptions =
 	[
-		"-h", "--help", "-v", "--version", "-d", "--debug", "-l", "--nologo"
+		"-h", "--help", "-v", "--version", "-d", "--debug", "-l", "-n", "--nologo"
 	];
 
 	private static CommandRootSelection RequiredCommandRoot(string[] args)

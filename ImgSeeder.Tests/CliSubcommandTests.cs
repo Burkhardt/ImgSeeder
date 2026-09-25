@@ -520,7 +520,30 @@ public sealed class CliSubcommandTests : IDisposable
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.4.0", run.output.Trim());
+		Assert.Equal("iorg v4.4.1", run.output.Trim());
+	}
+
+	[Fact]
+	public void MisplacedVerb_FailsFastWithActionableCorrection()
+	{
+		var run = RunIorg("-n", "list", "-t", "AfricaStage", "-r", "AIA/Image", "*");
+
+		Assert.Equal(2, run.exitCode);
+		Assert.Contains("Subcommand 'list' must be the first parameter", run.error);
+		Assert.Contains("iorg list -n -t AfricaStage -r AIA/Image", run.error);
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void VersionFlag_TakesImmediatePrecedence(bool versionFirst)
+	{
+		var args = versionFirst ? new[] { "-v", "list" } : new[] { "list", "-v" };
+		var run = RunIorg(args);
+
+		Assert.Equal(0, run.exitCode);
+		Assert.Equal("iorg v4.4.1", run.output.Trim());
+		Assert.Empty(run.error);
 	}
 
 	private static TextFile WriteImage(RaiPath directory, string name, string extension)
@@ -569,12 +592,12 @@ public sealed class CliSubcommandTests : IDisposable
 		catch { }
 	}
 
-	private static (int exitCode, string output) RunIorg(params string[] args)
+	private static (int exitCode, string output, string error) RunIorg(params string[] args)
 	{
 		var dll = new RaiFile(new RaiPath(AppContext.BaseDirectory), "ImgSeeder", "dll");
 		Assert.True(dll.Exists(), $"Expected ImgSeeder.dll at {dll.FullName}");
 
 		var result = IorgCommand.ForManagedAssembly(dll).Run(args);
-		return (result.ExitCode, result.Output);
+		return (result.ExitCode, result.Output, result.StandardError);
 	}
 }
