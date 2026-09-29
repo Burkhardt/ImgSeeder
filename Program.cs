@@ -1358,6 +1358,13 @@ internal static class Program
 
 	private static string? ResolveCloudProvider(string? requestedCloudProvider)
 	{
+		if (!Os.IsConfigLoaded)
+		{
+			if (!string.IsNullOrWhiteSpace(requestedCloudProvider))
+				throw new ArgumentException(MissingConfigurationDiagnostic());
+			return null;
+		}
+
 		var configured = Messages.CloudProviderOptions();
 		if (string.IsNullOrWhiteSpace(requestedCloudProvider))
 			return configured.FirstOrDefault();
@@ -1373,6 +1380,10 @@ internal static class Program
 			$"Configured DefaultCloudOrder options: {available}.");
 	}
 
+	internal static string MissingConfigurationDiagnostic()
+		=> $"RAIkeep configuration was not found at '{Os.DefaultConfigFileLocation}'. " +
+			"Run 'amafu init' to detect cloud providers and create it.";
+
 	private static string? EffectiveCloudProvider(
 		string? cloudProvider,
 		string? rootParam,
@@ -1386,12 +1397,15 @@ internal static class Program
 		try
 		{
 			_ = new RaiRelPath(rootParam);
-			return cloudProvider;
 		}
 		catch (ArgumentException)
 		{
 			return null;
 		}
+
+		if (!Os.IsConfigLoaded)
+			throw new ArgumentException(MissingConfigurationDiagnostic());
+		return cloudProvider;
 	}
 
 	private static RaiPath? ResolveDestinationRoot(RaiPath? imageRoot, string? subscriber)

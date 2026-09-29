@@ -13,6 +13,15 @@
 
 ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc/`](https://github.com/Burkhardt/RAIkeep/tree/main/doc) directory under `ImgSeeder_...` filenames; they are not stored separately in this child repository.
 
+ImgSeeder organizes images and related ItemTree artifacts across local or
+configured cloud-backed roots while preserving RAIkeep's cloud-safe in-place
+filesystem contract.
+
+**CLI tools:** use `iorg` to organize, list, move, and clean ImageTree artifact
+families. Use [`amafu init`](https://github.com/Burkhardt/Amafu) to detect cloud
+drives and create the shared RAIkeep configuration before using cloud-backed
+addressing.
+
 The NuGet tool package includes the Burkhardt `HardCastle.png` package icon, matching the other RAIkeep packages.
 
 ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `OneDrive`, `GoogleDrive`, and `ICloudDrive`.
@@ -199,6 +208,13 @@ configured `Os.Config.DefaultCloudOrder` that also has a non-empty `Cloud` path.
 The configured order is preserved in help, and providers outside that filtered
 list are rejected. An explicit absolute root (or `.`) remains local when no cloud
 option was explicitly supplied.
+
+If cloud-backed addressing is requested before the shared configuration exists,
+`iorg` reports:
+
+```text
+RAIkeep configuration was not found at '~/.config/RAIkeep.json5'. Run 'amafu init' to detect cloud providers and create it.
+```
 
 To inspect the resolved values without copying files, add `-h`:
 
