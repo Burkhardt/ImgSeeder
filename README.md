@@ -1,5 +1,12 @@
 # ImgSeeder
 
+## 4.4.8
+
+Coordinated 4.4.8 dependencies including JsonPit live references; iorg reports version 4.4.8.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.4.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.8.md).
+
+
 ## Terminal font
 
 > **Font note:** The `iorg` help screen uses glyph icons from Nerd Fonts. Most
@@ -119,7 +126,7 @@ write when the importer later fails; `pipefail` does not provide that guarantee.
 If receipt persistence fails, retain the receipt for retry instead of discarding
 it or blindly repeating the import.
 
-For the coordinated `jsonpit-python` 4.4.6 implementation, the equivalent
+For the coordinated `jsonpit-python` implementation, the equivalent
 stdin contract is `jpit seed Object - -r /srv/pits/AfricaStage` (or
 `jpit put Object - ...`). Use it in place of the `pits` command after the same
 success checks. Adele owns that Python implementation and parity validation;
