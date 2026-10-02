@@ -30,10 +30,9 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
-## 4.4.6 — CR049 (in preparation)
+## 4.4.6 — CR049
 
-CR049 adds ZIP ingestion, JSON import receipts, and EXIF inspection. This section
-records the workflow being implemented; release validation is still in progress.
+CR049 adds ZIP ingestion, JSON import receipts, and EXIF inspection. This release delivers verified archive ingestion with atomic reporting.
 
 ### Import a ZIP and inspect the result
 
