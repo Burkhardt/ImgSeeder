@@ -30,6 +30,205 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
+## 4.4.6 — CR049 (in preparation)
+
+CR049 adds ZIP ingestion, JSON import receipts, and EXIF inspection. This section
+records the workflow being implemented; release validation is still in progress.
+
+### Import a ZIP and inspect the result
+
+This example imports a local ZIP into the `AfricaStage` tenant below the selected
+image root. ZIP subdirectories are inspected for supported image files; non-image
+metadata is reported as skipped. The source archive is preserved.
+
+```bash
+iorg organize \
+  --source /Volumes/NVMe/GooglePhotos/Nomsa/Nomsa-1-001.zip \
+  --root /srv/images --tenant AfricaStage \
+  --pathconv 3 --nameconv 3 \
+  --import-id ImportPhotos-20261001-SDSU \
+  --activity-id ImportPhotosSDSU20260928 \
+  --json > import-receipt.json
+import_exit=$?
+
+# Inspect overall status and counts, even if the command reported a failure.
+jq '{Id, Status, Summary, Error}' import-receipt.json
+
+# Original ZIP name, resulting entity identity, and final relative filename.
+jq -r '.Files[] | select(.Status == "Copied" or .Status == "Unchanged") |
+  [.SourceEntry, .ItemId, .RelativePath, .Status] | @tsv' import-receipt.json
+
+# Persist a successful receipt through C# pits (explicit stdin input).
+if [ "$import_exit" -eq 0 ] &&
+   jq -e '.Class == "ImageImport" and .Status == "Completed"' import-receipt.json >/dev/null; then
+  pits seed Object --source - -r /srv/pits/AfricaStage < import-receipt.json
+fi
+```
+
+The proposed Python parity consumer is `jpit put Object -` or `jpit seed Object -`,
+with that project's root options. Python delivery is coordinated separately by
+jsonpit-python; C# implementation does not certify Python availability.
+
+A direct HTTPS ZIP endpoint can replace the local source using
+`--source-url 'https://example.org/photos.zip'`. Provider share pages or login
+screens are not ZIP endpoints; the calling activity must resolve/download those
+before invoking `iorg`. Quote signed URLs and avoid storing their secrets in
+application logs.
+
+### Why the image name can change
+
+`iorg` applies RaiImage naming and Unicode normalization to the source basename,
+then places the result under its ItemId buckets. For example, using Structured
+naming and the 8x2 path convention:
+
+```text
+ZIP entry:      concert/nomsa-concert-11.jpg
+ItemId:         NomsaConcert
+ImageNumber:    11
+RelativePath:   NomsaCon/NomsaConce/NomsaConcert_11.jpg
+Destination:    /srv/images/AfricaStage/NomsaCon/NomsaConce/NomsaConcert_11.jpg
+```
+
+Hyphens/spaces, casing, and a trailing image number can therefore produce a
+different final filename. For example, `Nomsa_San_Diego_State_0001.jpg` becomes
+`NomsaSan/NomsaSanDi/NomsaSanDiegoState_01.jpg` under the selected tenant
+with conventions 3/3. ZIP folder names do not become destination directories.
+Two entries that normalize to the same destination are rejected before copying.
+An existing destination with identical bytes is `Unchanged`; different bytes
+produce an error and are never silently overwritten.
+
+Existing RaiImage camera-name handling also recognizes prefixes such as `IMG`,
+`photo`, and `image`, including date-based substitutions. ZIP import uses those existing RaiImage rules; it does not add a separate
+renaming policy. Do not infer final names from source names. Always consume `ItemId`, `ImageNumber`, and `RelativePath` from the receipt.
+
+### Process success and failure explicitly
+
+`--json` emits one `Class: "ImageImport"` entity on stdout; diagnostics go to
+stderr. `Completed` exits with `0`. `Partial` or `Failed` exits with `1`.
+Validation failures write no images. A runtime copy failure may leave successful
+copies, and the receipt records their actual results. A local copy is not proof
+that a cloud provider has finished synchronizing it to another server.
+
+```bash
+jq '.Files[] | select(.Status == "Failed" or .Status == "Skipped") |
+  {SourceEntry, Status, Error, Reason}' import-receipt.json
+```
+
+Buffer the receipt and check the importer status before calling `pits`/`jpit` or
+starting selection. A direct `iorg ... | pits ...` pipe cannot retract a downstream
+write when the importer later fails; `pipefail` does not provide that guarantee.
+If receipt persistence fails, retain the receipt for retry instead of discarding
+it or blindly repeating the import.
+
+For the coordinated `jsonpit-python` 4.4.6 implementation, the equivalent
+stdin contract is `jpit seed Object - -r /srv/pits/AfricaStage` (or
+`jpit put Object - ...`). Use it in place of the `pits` command after the same
+success checks. Adele owns that Python implementation and parity validation;
+the C# `pits` behavior is the reference for this release.
+ Early argument errors may emit stderr only,
+so validate JSON before trying to process a receipt file.
+
+### Native extraction and optional limits
+
+On macOS and Linux (including Ubuntu), ZIP contents are extracted by an awaited
+`unzip -q -n <archive> -d <temporary-directory>` child process through
+`OsLib.UnzipCommand` and `RaiSystem.ExecAsync`. macOS supplies `/usr/bin/unzip`;
+Ubuntu installations need the `unzip` package. The options used are common to
+both Info-ZIP versions. Windows uses the built-in .NET ZIP reader.
+
+The import API dispatches archive inspection and processing to a worker, and
+awaits extraction. UI callers should await `ImageImport.RunAsync` or
+`IorgCommand.OrganizeAsync`; synchronous `.Wait()`/`.Result` calls still block
+their calling thread. Cancellation terminates the native extraction process.
+
+Extraction needs temporary disk space for the expanded archive, plus the
+downloaded ZIP for a URL source. A missing executable, insufficient disk space,
+corrupt archive, or other extraction error fails the import before final image
+copies. The temporary workspace is removed on success or failure. Final files
+are streamed directly into their ImageTree destinations; they are never moved
+from temporary storage into a CloudDrive.
+
+There is no application-imposed size, entry-count, or download timeout by
+default. Operators can opt into positive limits:
+
+```bash
+iorg organize --source photos.zip --root /srv/images --tenant AfricaStage \
+  --import-id ImportPhotos001 --json \
+  --max-archive-bytes 21474836480 \
+  --max-expanded-bytes 107374182400 \
+  --max-entries 100000 --download-timeout-seconds 3600
+```
+
+Increase these values or omit the corresponding option to remove the limit.
+Archive size, declared expanded size, and entry count are checked before
+extraction; extracted file sizes are verified afterward. These are input
+validation bounds, not operating-system disk reservations. Source/download and
+final-copy I/O is streamed rather than buffering the complete archive in RAM.
+
+### Structured EXIF output
+
+Use `--exif '*'` for all EXIF properties, `--exif DateTimeOriginal` for one,
+or `--exif DateTime,DateTimeOriginal` for several. Quote wildcards to prevent
+shell expansion. Dotted selectors such as `--exif 'Thumbnail.*'` work too.
+ImageMagick 7 (`magick`) must be available. Selected unknown/vendor fields remain
+available under their EXIF names.
+
+```bash
+# Inspect existing ImageTree photos; read-only, with JSON on stdout.
+iorg list 'NomsaSanDiegoState*' --root /srv/images --tenant AfricaStage \
+  --exif 'DateTimeOriginal,DateTimeDigitized,Thumbnail.*,Exposure*' --json \
+  | jq '.[] | {FileName, Exif}'
+
+# Include structured metadata in each successful import receipt row.
+iorg organize --source photos.zip --root /srv/images --tenant AfricaStage \
+  --import-id ImportPhotos001 --exif '*' --json > import-receipt.json
+jq '.Files[] | {RelativePath, Exif}' import-receipt.json
+```
+
+`--exif` implies JSON output. On `organize`, it therefore requires `--import-id`.
+On `list`, `--quiet` cannot be combined with `--exif`; non-image artifacts are
+omitted. Other verbs reject `--exif` as an unsupported option.
+
+Dates become C# `DateTimeOffset` values and serialize as ISO 8601 strings:
+
+| EXIF date / output property | Required companion |
+| --- | --- |
+| `DateTimeOriginal` | `OffsetTimeOriginal` |
+| `DateTimeDigitized` | `OffsetTimeDigitized` |
+| `DateTime` | `OffsetTime` |
+
+The reader fetches the matching offset even when the selector only names the
+date. It never borrows another date's offset or a computer/file/download time.
+There is no synthesized `Captured` alias. A missing or malformed companion
+leaves the original fields in `Unconverted`, omits the typed date, and produces
+a stderr diagnostic. `DateTime` is embedded modification metadata, distinct
+from filesystem timestamps. An offset defines an instant, not a geographic
+zone such as America/Los_Angeles.
+
+Related fields are grouped into `Thumbnail`, `Lens`, `FocalPlane`, and
+`Exposure`. Recognized numeric codes become integers; rational values preserve
+`Numerator` and `Denominator` and include a numeric `Value`. For example:
+
+```json
+{
+  "DateTimeOriginal": "2026-09-28T17:40:31-07:00",
+  "Thumbnail": {"Compression": 6, "XResolution": {"Numerator": 72, "Denominator": 1, "Value": 72}},
+  "Lens": {"Model": "E 70-180mm F2.8 A056"},
+  "Exposure": {"Time": {"Numerator": 1, "Denominator": 250, "Value": 0.004}}
+}
+```
+
+```csharp
+ExifMetadata metadata = await ImageExif.ReadMetadataAsync(imageFile,
+    "DateTimeOriginal,DateTimeDigitized,Exposure*");
+DateTimeOffset? original = metadata.DateTimeOriginal;
+DateTime? originalUtc = original?.UtcDateTime;
+```
+
+The lower-level `ImageExif.ReadAsync` remains available for callers needing the
+original string dictionary. See [ImageMagick properties](https://imagemagick.org/escape/)
+and the [EXIF definitions](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf).
+
 ## 4.4.5
 
 - Participates unchanged in the synchronized nine-package CR047 release and reports `iorg v4.4.5`.

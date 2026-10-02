@@ -65,7 +65,7 @@ public static class Messages
 			var lines = new List<string>
 			{
 				HelpLine("Commands", Icons.Info, "organize, list, move, clean"),
-				"  iorg organize --source <dir> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
+				"  iorg organize (--source <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
 				"  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--json|--quiet]",
 				"  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]",
 				"  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--force]",
@@ -905,10 +905,10 @@ internal static class Program
 				_ => throw new ArgumentException($"Unknown command '{command}'.")
 			};
 		}
-		catch (ArgumentException ex)
+		catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or JsonException or UnauthorizedAccessException)
 		{
-			Messages.WriteError($"CLI Error: {ex.Message}");
-			Messages.WriteInfo($"Run 'iorg {command} --help' for command usage.");
+			Console.Error.WriteLine($"error: {ex.Message}");
+			Console.Error.WriteLine($"Run 'iorg {command} --help' for command usage.");
 			return 1;
 		}
 	}
@@ -916,17 +916,28 @@ internal static class Program
 	private static int RunOrganizeCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["--source", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
+			.Concat(["--source", "--source-url", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count > 1)
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
 
-		var source = RequiredCommandValue(args, "--source");
+		var source = ParamValue(args, "--source");
+		var sourceUrl = ParamValue(args, "--source-url");
+		if ((source is null) == (sourceUrl is null)) throw new ArgumentException("Specify exactly one of --source or --source-url.");
+		Uri? url = null;
+		if (sourceUrl is not null && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out url) || url.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(url.UserInfo)))
+			throw new ArgumentException("--source-url requires a direct HTTPS URL without embedded credentials.");
+		var importId = ParamValue(args, "--import-id");
+		var exif = ParamValue(args, "--exif");
+		var json = HasOption(args, "--json") || exif is not null;
+		if (json && importId is null) throw new ArgumentException("--json or --exif requires --import-id for the ImageImport receipt.");
+		var useImport = url is not null || string.Equals(Path.GetExtension(source), ".zip", StringComparison.OrdinalIgnoreCase) ||
+			json || importId is not null || exif is not null || HasOption(args, "--activity-id", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds");
 		var root = RequiredCommandRoot(args);
-		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(RequiredCommandValue(args, "--pathconv", "-p"), "--pathconv");
-		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(RequiredCommandValue(args, "--nameconv", "-n"), "--nameconv");
+		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(ParamValue(args, "--pathconv", "-p") ?? (useImport ? "3" : RequiredCommandValue(args, "--pathconv", "-p")), "--pathconv");
+		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(ParamValue(args, "--nameconv", "-n") ?? (useImport ? "3" : RequiredCommandValue(args, "--nameconv", "-n")), "--nameconv");
 		var subscriberOption = CommandSubscriber(args);
 		if (positionals.Count == 1 && !string.IsNullOrWhiteSpace(subscriberOption))
 			throw new ArgumentException("Specify the subscriber either positionally or with -t/--tenant, not both.");
@@ -936,9 +947,39 @@ internal static class Program
 			Messages.CloudProvider,
 			positionals.SingleOrDefault() ?? subscriberOption,
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		if (useImport)
+		{
+			if (!Enum.TryParse<PathConventionType>(pathConvention, true, out var pathMode) || !Enum.IsDefined(pathMode)) throw new ArgumentException("Invalid --pathconv.");
+			if (!Enum.TryParse<ImageNamingConvention>(nameConvention, true, out var nameMode) || !Enum.IsDefined(nameMode)) throw new ArgumentException("Invalid --nameconv.");
+			var entries = OptionalPositiveLimit(args, "--max-entries");
+			if (entries > int.MaxValue) throw new ArgumentException("--max-entries exceeds the supported integer range.");
+			var seconds = OptionalPositiveLimit(args, "--download-timeout-seconds");
+			if (seconds > 4_294_967) throw new ArgumentException("--download-timeout-seconds exceeds the supported timer range.");
+			var limits = new ImageImportLimits(OptionalPositiveLimit(args, "--max-archive-bytes"), OptionalPositiveLimit(args, "--max-expanded-bytes"),
+				(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
+			var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), ResolveCommandSubscriberRoot(rootBinding),
+				rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif).GetAwaiter().GetResult();
+			if (json) Console.WriteLine(JsonSerializer.Serialize(receipt));
+			else Console.WriteLine($"{receipt.Status}: {receipt.Summary.Copied} copied, {receipt.Summary.Unchanged} unchanged, {receipt.Summary.Skipped} skipped, {receipt.Summary.Failed} failed.");
+			if (receipt.Error is not null) Console.Error.WriteLine("error: " + receipt.Error);
+			foreach (var row in receipt.Files)
+			{
+				if (row.Error is not null) Console.Error.WriteLine($"{row.SourceEntry}: {row.Error}");
+				if (row.Exif is not null) foreach (var diagnostic in row.Exif.Diagnostics) Console.Error.WriteLine($"{row.SourceEntry}: {diagnostic}");
+			}
+			return receipt.Status == "Completed" && receipt.Error is null ? 0 : 1;
+		}
 		var mapped = CommandGlobalArguments(args, rootBinding);
-		mapped.AddRange(["--source", source, "--pathconv", pathConvention, "--nameconv", nameConvention, rootBinding.Subscriber]);
+		mapped.AddRange(["--source", source!, "--pathconv", pathConvention, "--nameconv", nameConvention, rootBinding.Subscriber]);
 		return RunMappedArguments(mapped.ToArray());
+	}
+
+	private static long? OptionalPositiveLimit(string[] args, string option)
+	{
+		var raw = ParamValue(args, option);
+		if (raw is null) return null;
+		if (!long.TryParse(raw, out var value) || value <= 0) throw new ArgumentException(option + " requires a positive integer; omit it for no application-imposed limit.");
+		return value;
 	}
 
 	private static int RunCleanCommand(string[] args)
@@ -978,7 +1019,7 @@ internal static class Program
 	private static int RunListCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "--exif"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -987,6 +1028,12 @@ internal static class Program
 			throw new ArgumentException("list requires exactly one <FileNamePattern>.");
 		if (HasOption(args, "--json") && HasOption(args, "--quiet"))
 			throw new ArgumentException("Use only one of --json or --quiet.");
+		var exif = ParamValue(args, "--exif");
+		if (exif is not null)
+		{
+			ImageExif.ValidateSelector(exif);
+			if (HasOption(args, "--quiet")) throw new ArgumentException("--exif cannot be combined with --quiet.");
+		}
 
 		var rootBinding = BindCommandRoot(
 			RequiredCommandRoot(args),
@@ -996,7 +1043,18 @@ internal static class Program
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
 		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, positionals[0]);
 
-		if (HasOption(args, "--json"))
+		if (exif is not null)
+		{
+			var rows = new List<object>();
+			foreach (var file in files.Where(f => ImageTypes.Default.Array.Any(e => string.Equals(e.Trim().TrimStart('.'), f.Ext.TrimStart('.'), StringComparison.OrdinalIgnoreCase))))
+			{
+				var metadata = ImageExif.ReadMetadataAsync(file, exif).GetAwaiter().GetResult();
+				rows.Add(new { FileName = file.NameWithExtension, RelativePath = Path.GetRelativePath(subscriberRoot.FullPath, file.FullName).Replace('\\', '/'), Exif = metadata });
+				foreach (var diagnostic in metadata.Diagnostics) Console.Error.WriteLine($"{file.NameWithExtension}: {diagnostic}");
+			}
+			Console.WriteLine(JsonSerializer.Serialize(rows));
+		}
+		else if (HasOption(args, "--json"))
 			Console.WriteLine(JsonSerializer.Serialize(files.Select(file => file.NameWithExtension)));
 		else
 		{
@@ -1193,13 +1251,13 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] --source <dir> ((-r|--root) <dir>|(-a|--app) <dir>) (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
+				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] (--source <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
 			{
 				"Usage: iorg list <FileNamePattern> [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
-				"List is strictly read-only and includes image, .puml, and .raid artifacts."
+				"List is strictly read-only and includes image, .puml, and .raid artifacts. --exif selects image metadata."
 			},
 			"move" => new[]
 			{
@@ -1225,6 +1283,15 @@ internal static class Program
 			WriteCommandHelpOption("-p|--pathconv:", Messages.PathConventionDescription());
 		if (command == "organize")
 			WriteCommandHelpOption("-n|--nameconv:", Messages.NamingConventionDescription());
+		if (command is "list" or "organize")
+			WriteCommandHelpOption("--exif:", "'*', one EXIF tag, or comma-separated tags/patterns; structured JSON output");
+		if (command == "organize")
+		{
+			WriteCommandHelpOption("--import-id:", "receipt Id; required with --json or --exif; --activity-id optionally associates an Activity");
+			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
+			Messages.WriteInfo("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
+		}
+
 	}
 
 	private static void WriteCommandHelpOption(string option, string description)
