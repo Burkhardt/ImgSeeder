@@ -1,5 +1,11 @@
 # ImgSeeder
 
+## 4.5.0
+
+Coordinated 4.5.0 dependencies including JsonPit live references; iorg reports version 4.5.0.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.0.md).
+
 ## 4.4.8
 
 Coordinated 4.4.8 dependencies including JsonPit live references; iorg reports version 4.4.8.
@@ -527,6 +533,10 @@ Tagged releases also publish self-contained `iorg` workflow artifacts for:
 - `win-x64`
 
 These binaries can be deployed without a separate .NET runtime installation.
+
+## release notes
+
+- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.0.md)
 
 ## Validation
 
