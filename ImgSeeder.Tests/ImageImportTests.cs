@@ -12,12 +12,12 @@ public sealed class ImageImportTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "RAIkeep-import-" + Guid.NewGuid().ToString("N"));
     private static readonly ImageImportLimits Limits = new(10_000_000, 20_000_000, 1000, TimeSpan.FromSeconds(5));
-    private RaiPath Destination => new(Path.Combine(root, "images", "Nomsa"));
+    private RaiPath Destination => new(Path.Combine(root, "images", "Customer"));
 
     [Fact]
     public async Task DefaultsHaveNoApplicationQuotaAndNestedMetadataIsSkipped()
     {
-        var zip = Zip(new[] { ("nested/Nomsa_San_Diego_State_0001.jpg", "image"), ("metadata/info.json", "{}") });
+        var zip = Zip(new[] { ("nested/Customer_Order_Sheet_0001.jpg", "image"), ("metadata/info.json", "{}") });
         var result = await Import(zip, new ImageImportLimits());
         Assert.Equal("Completed", result.Status);
         Assert.Equal(1, result.Summary.Copied);
@@ -35,17 +35,17 @@ public sealed class ImageImportTests : IDisposable
     }
 
     [Fact]
-    public async Task ConcertArchiveCopies193ImagesAndReplaysUnchanged()
+    public async Task OrderArchiveCopies193ImagesAndReplaysUnchanged()
     {
-        var zip = Zip(Enumerable.Range(1, 193).Select(n => ($"concert/nomsa-concert-{n:D3}.jpg", "photo-" + n)).Append(("metadata/info.json", "{}")));
+        var zip = Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-{n:D3}.jpg", "photo-" + n)).Append(("metadata/info.json", "{}")));
         var receipt = await Import(zip);
         Assert.Equal("Completed", receipt.Status);
         Assert.Equal(193, receipt.Summary.Copied);
         Assert.Equal(1, receipt.Summary.Skipped);
         Assert.All(receipt.Files.Where(f => f.Status == "Copied"), f =>
         {
-            Assert.Equal("NomsaConcert", f.ItemId);
-            Assert.StartsWith("NomsaCon/NomsaConce/", f.RelativePath);
+            Assert.Equal("CustomerOrder", f.ItemId);
+            Assert.StartsWith("Customer/CustomerOr/", f.RelativePath);
             Assert.True(File.Exists(Path.Combine(Destination.FullPath, f.RelativePath!)));
         });
         var again = await Import(zip);
@@ -56,6 +56,35 @@ public sealed class ImageImportTests : IDisposable
         Assert.Equal("ImageImport", json.RootElement.GetProperty("Class").GetString());
         Assert.False(json.RootElement.TryGetProperty("Modified", out _));
         Assert.False(json.RootElement.TryGetProperty("ActivityId", out _));
+    }
+
+    [Fact]
+    public async Task CleanBatchEmitsCompactReceiptBelow500BytesWithReconstructiblePaths()
+    {
+        var receipt = await Import(Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-26-{n}.jpg", "photo-" + n))));
+        Assert.Equal(193, receipt.Summary.Copied);
+        var serialized = JsonSerializer.Serialize(receipt);
+        Assert.True(Encoding.UTF8.GetByteCount(serialized) < 500, serialized);
+        using var json = JsonDocument.Parse(serialized);
+        var result = json.RootElement;
+        Assert.Equal(2, result.GetProperty("ReceiptVersion").GetInt32());
+        Assert.Equal("CustomerOrder", result.GetProperty("BaseItemId").GetString());
+        Assert.Equal("ItemIdTree8x2", result.GetProperty("PathConvention").GetString());
+        Assert.Equal("Structured", result.GetProperty("NamingConvention").GetString());
+        Assert.Equal(1, result.GetProperty("Range").GetProperty("Start").GetInt32());
+        Assert.Equal(193, result.GetProperty("Range").GetProperty("End").GetInt32());
+        Assert.Equal(193, result.GetProperty("Range").GetProperty("Count").GetInt32());
+        Assert.False(result.TryGetProperty("Files", out _));
+        Assert.False(result.TryGetProperty("Exceptions", out _));
+        Assert.False(result.TryGetProperty("Status", out _));
+        foreach (var number in Enumerable.Range(1, 193))
+        {
+            var target = new ImageTreeFile(Destination, "CustomerOrder", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = number };
+            Assert.True(target.Exists(), target.FullName);
+        }
+        var repeat = await Import(Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-26-{n}.jpg", "photo-" + n))));
+        Assert.Equal(2, repeat.ReceiptVersion);
+        Assert.Equal(193, repeat.Summary.Unchanged);
     }
 
     [Theory]
@@ -149,7 +178,7 @@ public sealed class ImageImportTests : IDisposable
     {
         var zip = Zip(new[] { ("photo-01.jpg", "downloaded") });
         using var client = new HttpClient(new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(File.ReadAllBytes(zip)) }));
-        var receipt = await ImageImport.RunAsync(null, new Uri("https://images.example/photos.zip?secret=token"), "Import001", "Activity001", Destination, "Nomsa", Limits, downloadClient: client);
+        var receipt = await ImageImport.RunAsync(null, new Uri("https://images.example/photos.zip?secret=token"), "Import001", "Activity001", Destination, "Customer", Limits, downloadClient: client);
         Assert.Equal("Completed", receipt.Status);
         Assert.Equal("photos.zip", receipt.Source.Name);
         Assert.DoesNotContain("secret", JsonSerializer.Serialize(receipt));
@@ -167,7 +196,7 @@ public sealed class ImageImportTests : IDisposable
         })
         {
             using var client = new HttpClient(new FakeHandler(_ => response));
-            var receipt = await ImageImport.RunAsync(null, new Uri("https://images.example/photos.zip?secret=token"), "Import001", null, Destination, "Nomsa", Limits with { MaxArchiveBytes = 50 }, downloadClient: client);
+            var receipt = await ImageImport.RunAsync(null, new Uri("https://images.example/photos.zip?secret=token"), "Import001", null, Destination, "Customer", Limits with { MaxArchiveBytes = 50 }, downloadClient: client);
             Assert.Equal("Failed", receipt.Status);
             Assert.False(Destination.Exists());
             Assert.DoesNotContain("secret", JsonSerializer.Serialize(receipt));
@@ -179,12 +208,12 @@ public sealed class ImageImportTests : IDisposable
     [InlineData("Import", "<Activity>")]
     public async Task ReceiptIdentitiesAreValidatedBeforeInputAccess(string id, string? activity)
     {
-        await Assert.ThrowsAsync<ArgumentException>(() => ImageImport.RunAsync("missing.zip", null, id, activity, Destination, "Nomsa", Limits));
+        await Assert.ThrowsAsync<ArgumentException>(() => ImageImport.RunAsync("missing.zip", null, id, activity, Destination, "Customer", Limits));
         Assert.False(Destination.Exists());
     }
 
     private Task<ImageImportReceipt> Import(string zip, ImageImportLimits? limits = null) =>
-        ImageImport.RunAsync(zip, null, "Import001", null, Destination, "Nomsa", limits ?? Limits);
+        ImageImport.RunAsync(zip, null, "Import001", null, Destination, "Customer", limits ?? Limits);
 
     private string Zip(IEnumerable<(string name, string content)> entries)
     {

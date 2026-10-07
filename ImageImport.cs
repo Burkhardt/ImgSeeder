@@ -22,24 +22,86 @@ public sealed class ImageImportReceipt
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Id { get; init; }
     public string Class => "ImageImport";
-    public int ReceiptVersion => 1;
+    public int ReceiptVersion => 2;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BaseItemId { get; private set; }
+    [JsonIgnore]
+    public PathConventionType PathMode { get; init; } = PathConventionType.ItemIdTree8x2;
+    [JsonIgnore]
+    public ImageNamingConvention NamingMode { get; init; } = ImageNamingConvention.Structured;
+    [JsonIgnore]
+    public bool IncludeExif { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PathConvention => Range is null ? null : PathMode.ToString();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NamingConvention => Range is null ? null : NamingMode.ToString();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageImportRange? Range { get; private set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ImageImportNamedRange>? Ranges { get; private set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ImageImportEntry>? Exceptions { get; private set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ActivityId { get; init; }
+    // Operational result for library callers and CLI exit status; never persisted as Activity state.
+    [JsonIgnore]
     public string Status { get; internal set; } = "Failed";
     public required string Tenant { get; init; }
     public required ImageImportSource Source { get; init; }
     public ImageImportSummary Summary => new(
         Files.Count(f => f.Status == "Copied"), Files.Count(f => f.Status == "Unchanged"),
         Files.Count(f => f.Status == "Skipped"), Files.Count(f => f.Status == "Failed"));
+    // Retained in memory for diagnostics and existing library callers.
+    [JsonIgnore]
     public List<ImageImportEntry> Files { get; } = [];
+    [JsonPropertyName("Files")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ImageImportEntry>? DetailedFiles => IncludeExif ? Files : null;
+
+    internal void Compact()
+    {
+        var exceptions = Files.Where(f => f.Status is "Failed" or "Skipped").ToList();
+        var ranges = new List<ImageImportNamedRange>();
+        foreach (var group in Files.Where(f => f.Status is "Copied" or "Unchanged")
+            .GroupBy(f => (f.ItemId, f.Ext)).OrderBy(g => g.Key.ItemId, StringComparer.Ordinal).ThenBy(g => g.Key.Ext, StringComparer.Ordinal))
+        {
+            var entries = group.OrderBy(f => f.ImageNumber).ToArray();
+            for (var start = 0; start < entries.Length;)
+            {
+                var end = start;
+                while (end + 1 < entries.Length && entries[end + 1].ImageNumber == (long?)entries[end].ImageNumber + 1) end++;
+                if (end > start && entries[start].ImageNumber is >= 0)
+                    ranges.Add(new(group.Key.ItemId!, PathMode.ToString(), NamingMode.ToString(),
+                        entries[start].ImageNumber!.Value, entries[end].ImageNumber!.Value, end - start + 1, group.Key.Ext!));
+                else
+                {
+                    entries[start].Reason ??= "Singleton image outside a contiguous range.";
+                    exceptions.Add(entries[start]);
+                }
+                start = end + 1;
+            }
+        }
+        if (ranges.Count == 1)
+        {
+            var range = ranges[0];
+            BaseItemId = range.BaseItemId;
+            Range = new(range.Start, range.End, range.Count, range.Ext);
+        }
+        else if (ranges.Count > 1) Ranges = ranges;
+        if (exceptions.Count > 0) Exceptions = exceptions.OrderBy(e => e.SourceEntry, StringComparer.Ordinal).ToArray();
+    }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Error { get; internal set; }
 }
+public sealed record ImageImportNamedRange(string BaseItemId, string PathConvention, string NamingConvention, int Start, int End, int Count, string Ext);
+public sealed record ImageImportRange(int Start, int End, int Count, string Ext);
 public sealed record ImageImportSource(string Kind, string Name);
 public sealed record ImageImportSummary(int Copied, int Unchanged, int Skipped, int Failed);
 public sealed class ImageImportEntry
 {
     public required string SourceEntry { get; init; }
+    [JsonIgnore]
+    public string? Ext { get; internal set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ItemId { get; internal set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -89,6 +151,7 @@ public static class ImageImport
         var receipt = new ImageImportReceipt
         {
             Id = importId, ActivityId = activityId, Tenant = tenant,
+            PathMode = pathConvention, NamingMode = namingConvention, IncludeExif = exif is not null,
             Source = new(zipInput ? "Zip" : "Directory", sourceUrl is null
                 ? System.IO.Path.GetFileName(source!.TrimEnd('/', '\\'))
                 : System.IO.Path.GetFileName(sourceUrl.AbsolutePath))
@@ -213,6 +276,7 @@ public static class ImageImport
                 }
             }
         }
+        receipt.Compact();
         return receipt;
     }
 
@@ -226,6 +290,7 @@ public static class ImageImport
         var target = new ImageTreeFile(root, normalized.ItemId, string.Empty, normalized.Ext, pathConvention, namingConvention)
         { ImageNumber = normalized.ImageNumber };
         row.ItemId = normalized.ItemId;
+        row.Ext = normalized.Ext;
         row.ImageNumber = normalized.ImageNumber;
         row.RelativePath = System.IO.Path.GetRelativePath(root.FullPath, target.FullName).Replace('\\', '/');
         if (row.RelativePath.StartsWith("../", StringComparison.Ordinal) || System.IO.Path.IsPathRooted(row.RelativePath))

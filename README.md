@@ -1,5 +1,11 @@
 # ImgSeeder
 
+## 4.5.5
+
+Coordinated 4.5.5 release; public behavior is aligned with the synchronized platform.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.5.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.5.md).
+
 ## 4.5.4
 
 Coordinated 4.5.4 release; public behavior is aligned with the synchronized platform.
@@ -61,102 +67,112 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
-## 4.4.6 — CR049
+## ZIP import and compact receipts (CR049 / CR054)
 
-CR049 adds ZIP ingestion, JSON import receipts, and EXIF inspection. This release delivers verified archive ingestion with atomic reporting.
-
-### Import a ZIP and inspect the result
-
-This example imports a local ZIP into the `AfricaStage` tenant below the selected
-image root. ZIP subdirectories are inspected for supported image files; non-image
-metadata is reported as skipped. The source archive is preserved.
+`iorg` inspects ZIP subdirectories for supported images, preserves the archive,
+and copies directly from its temporary extraction workspace into the ImageTree.
+This example imports a batch named `Customer-Order-Sheet-26-1.jpg` through
+`Customer-Order-Sheet-26-193.jpg`:
 
 ```bash
-iorg organize \
-  --source /Volumes/NVMe/GooglePhotos/Nomsa/Nomsa-1-001.zip \
-  --root /srv/images --tenant AfricaStage \
-  --pathconv 3 --nameconv 3 \
-  --import-id ImportPhotos-20261001-SDSU \
-  --activity-id ImportPhotosSDSU20260928 \
+iorg organize --source ~/Downloads/orders.zip \
+  --root /srv/images --tenant Customer --pathconv 3 --nameconv 3 \
+  --import-id Import_OrderPhotos --activity-id OrderPhotos \
   --json > import-receipt.json
 import_exit=$?
 
-# Inspect overall status and counts, even if the command reported a failure.
-jq '{Id, Status, Summary, Error}' import-receipt.json
+jq '{Id, ReceiptVersion, BaseItemId, Range, Ranges, Summary, Exceptions, Error}' import-receipt.json
 
-# Original ZIP name, resulting entity identity, and final relative filename.
-jq -r '.Files[] | select(.Status == "Copied" or .Status == "Unchanged") |
-  [.SourceEntry, .ItemId, .RelativePath, .Status] | @tsv' import-receipt.json
-
-# Persist a successful receipt through C# pits (explicit stdin input).
+# Buffer first: a failed import must not automatically seed a receipt downstream.
 if [ "$import_exit" -eq 0 ] &&
-   jq -e '.Class == "ImageImport" and .Status == "Completed"' import-receipt.json >/dev/null; then
-  pits seed Object --source - -r /srv/pits/AfricaStage < import-receipt.json
+   jq -e '.Class == "ImageImport" and .Summary.Failed == 0 and .Error == null' import-receipt.json >/dev/null; then
+  pits seed Object --source - -r /srv/pits/Customer < import-receipt.json
 fi
 ```
 
-The proposed Python parity consumer is `jpit put Object -` or `jpit seed Object -`,
-with that project's root options. Python delivery is coordinated separately by
-jsonpit-python; C# implementation does not certify Python availability.
+Python consumers can use `jpit seed Object - -r /srv/pits/Customer` or
+`jpit put Object - -r /srv/pits/Customer` after the same success check.
+Python package delivery and validation are coordinated independently.
+A direct HTTPS ZIP endpoint can replace `--source` with
+`--source-url 'https://example.org/orders.zip'`; provider login/share pages are
+not ZIP downloads. Source URL credentials and query strings are not persisted.
 
-A direct HTTPS ZIP endpoint can replace the local source using
-`--source-url 'https://example.org/photos.zip'`. Provider share pages or login
-screens are not ZIP endpoints; the calling activity must resolve/download those
-before invoking `iorg`. Quote signed URLs and avoid storing their secrets in
-application logs.
+### How names and paths are derived
 
-### Why the image name can change
-
-`iorg` applies RaiImage naming and Unicode normalization to the source basename,
-then places the result under its ItemId buckets. For example, using Structured
-naming and the 8x2 path convention:
+`ImageFile.EasyFileName` owns normalization. A terminal run of hyphen- or
+underscore-separated numeric tokens is removed from the descriptive stem; the
+last token supplies `ImageNumber`. Separated uppercase words become PascalCase.
 
 ```text
-ZIP entry:      concert/nomsa-concert-11.jpg
-ItemId:         NomsaConcert
-ImageNumber:    11
-RelativePath:   NomsaCon/NomsaConce/NomsaConcert_11.jpg
-Destination:    /srv/images/AfricaStage/NomsaCon/NomsaConce/NomsaConcert_11.jpg
+Source:         Customer-Order-Sheet-26-10.jpg
+BaseItemId:     CustomerOrderSheet
+ImageNumber:    10
+Target:         Customer/CustomerOr/CustomerOrderSheet_010.jpg
 ```
 
-Hyphens/spaces, casing, and a trailing image number can therefore produce a
-different final filename. For example, `Nomsa_San_Diego_State_0001.jpg` becomes
-`NomsaSan/NomsaSanDi/NomsaSanDiegoState_01.jpg` under the selected tenant
-with conventions 3/3. ZIP folder names do not become destination directories.
-Two entries that normalize to the same destination are rejected before copying.
-An existing destination with identical bytes is `Unchanged`; different bytes
-produce an error and are never silently overwritten.
+`Order_SHEET_001.jpg` becomes `OrderSheet_001.jpg`. Underscores do not remain in
+the normalized base stem. Earlier digits within descriptive words are preserved.
+ZIP folder names do not determine destination folders. A normalization collision
+rejects the batch before copying; different existing bytes are never overwritten.
 
-Existing RaiImage camera-name handling also recognizes prefixes such as `IMG`,
-`photo`, and `image`, including date-based substitutions. ZIP import uses those existing RaiImage rules; it does not add a separate
-renaming policy. Do not infer final names from source names. Always consume `ItemId`, `ImageNumber`, and `RelativePath` from the receipt.
+**4.5.5 path compatibility:** Structured output now uses at least three digits
+(`_001`, `_010`, `_193`); Legacy retains two. Existing two-digit source names still
+parse, but recomposition uses the new Structured filename. Existing stored files
+are not renamed automatically. Migrate existing Structured paths and their
+references together before replaying imports into an older image tree; otherwise
+an old `_01` and new `_001` can coexist. D3 is a minimum width: numbers above 999
+are not truncated. Numbered diagram artifacts also use D3 consistently across `.raid`, `.puml`,
+and SVG siblings; migrate existing numbered diagram paths together.
 
-### Process success and failure explicitly
+### ReceiptVersion 2
 
-`--json` emits one `Class: "ImageImport"` entity on stdout; diagnostics go to
-stderr. `Completed` exits with `0`. `Partial` or `Failed` exits with `1`.
-Validation failures write no images. A runtime copy failure may leave successful
-copies, and the receipt records their actual results. A local copy is not proof
-that a cloud provider has finished synchronizing it to another server.
+A clean homogeneous sequence produces one compact descriptor, not a per-file list:
+
+```json
+{"Id":"Import_OrderPhotos","Class":"ImageImport","ReceiptVersion":2,"BaseItemId":"CustomerOrderSheet","PathConvention":"ItemIdTree8x2","NamingConvention":"Structured","Range":{"Start":1,"End":193,"Count":193,"Ext":"jpg"},"ActivityId":"OrderPhotos","Tenant":"Customer","Source":{"Kind":"Zip","Name":"orders.zip"},"Summary":{"Copied":193,"Unchanged":0,"Skipped":0,"Failed":0}}
+```
+
+The clean 193-image regression receipt is below 500 UTF-8 bytes before Pit history
+metadata. Receipt size depends on identifiers, source names, and exceptions;
+arbitrary mixed archives cannot have a universal fixed byte bound.
+
+Mixed stems, extensions, or gaps produce deterministic contiguous `Ranges`.
+Each range carries `BaseItemId`, `PathConvention`, `NamingConvention`, `Start`,
+`End`, `Count`, and `Ext`. A single remaining range uses the top-level form.
+Runs of only one image are represented in `Exceptions` with their actual copy
+status, just like skipped files and failures; a singleton is not itself a failed
+import. The 500-image/two-range regression receipt is below 1 KB.
 
 ```bash
-jq '.Files[] | select(.Status == "Failed" or .Status == "Skipped") |
-  {SourceEntry, Status, Error, Reason}' import-receipt.json
+# One row per range, for either form; this does not invent filename rules.
+jq -r '(.Ranges // [(.Range + {BaseItemId, PathConvention, NamingConvention})])[] |
+  select(.Start != null) | [.BaseItemId, .Start, .End, .Count, .Ext] | @tsv' import-receipt.json
+jq '.Exceptions[]? | {SourceEntry, ItemId, ImageNumber, RelativePath, Status, Error, Reason}' import-receipt.json
 ```
 
-Buffer the receipt and check the importer status before calling `pits`/`jpit` or
-starting selection. A direct `iorg ... | pits ...` pipe cannot retract a downstream
-write when the importer later fails; `pipefail` does not provide that guarantee.
-If receipt persistence fails, retain the receipt for retry instead of discarding
-it or blindly repeating the import.
+Consumers reconstruct paths using the existing classes and enums:
 
-For the coordinated `jsonpit-python` implementation, the equivalent
-stdin contract is `jpit seed Object - -r /srv/pits/AfricaStage` (or
-`jpit put Object - ...`). Use it in place of the `pits` command after the same
-success checks. Adele owns that Python implementation and parity validation;
-the C# `pits` behavior is the reference for this release.
- Early argument errors may emit stderr only,
-so validate JSON before trying to process a receipt file.
+```csharp
+var image = new ImageTreeFile(tenantRoot, "CustomerOrderSheet", "", "jpg",
+    PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured)
+{
+    ImageNumber = 10
+};
+Console.WriteLine(image.FullName);
+```
+
+Use the receipt's convention values, not a custom padding or path pattern.
+Only successfully copied or unchanged images belong to ranges. Failed copies and
+skipped entries do not inflate a successful range. The receipt links to an
+activity with `ActivityId` and contains no top-level lifecycle `Status`.
+Activity lifecycle state remains in its own Pit. The library retains its
+operational result in memory for CLI exit handling.
+
+`--json` writes one JSON entity to stdout and diagnostics to stderr. Successful
+imports exit 0; preflight, copying, or cleanup failures exit 1. A runtime failure
+may leave successful copies; inspect `Summary`, `Exceptions`, and `Error`.
+An early argument error may produce stderr only. A local copy does not certify
+cloud synchronization. Keep receipts for retry if subsequent Pit ingestion fails.
 
 ### Native extraction and optional limits
 
@@ -182,7 +198,7 @@ There is no application-imposed size, entry-count, or download timeout by
 default. Operators can opt into positive limits:
 
 ```bash
-iorg organize --source photos.zip --root /srv/images --tenant AfricaStage \
+iorg organize --source photos.zip --root /srv/images --tenant Customer \
   --import-id ImportPhotos001 --json \
   --max-archive-bytes 21474836480 \
   --max-expanded-bytes 107374182400 \
@@ -205,15 +221,17 @@ available under their EXIF names.
 
 ```bash
 # Inspect existing ImageTree photos; read-only, with JSON on stdout.
-iorg list 'NomsaSanDiegoState*' --root /srv/images --tenant AfricaStage \
+iorg list 'CustomerSanDiegoState*' --root /srv/images --tenant Customer \
   --exif 'DateTimeOriginal,DateTimeDigitized,Thumbnail.*,Exposure*' --json \
   | jq '.[] | {FileName, Exif}'
 
 # Include structured metadata in each successful import receipt row.
-iorg organize --source photos.zip --root /srv/images --tenant AfricaStage \
+iorg organize --source photos.zip --root /srv/images --tenant Customer \
   --import-id ImportPhotos001 --exif '*' --json > import-receipt.json
 jq '.Files[] | {RelativePath, Exif}' import-receipt.json
 ```
+
+`--exif` explicitly opts into the detailed `Files` array alongside `Range`/`Ranges` and `Summary`. Without `--exif`, `Files` is omitted.
 
 `--exif` implies JSON output. On `organize`, it therefore requires `--import-id`.
 On `list`, `--quiet` cannot be combined with `--exif`; non-image artifacts are
@@ -427,13 +445,13 @@ sudo dotnet tool update ImgSeeder --tool-path /usr/local/bin
 Typical cloud-rooted usage:
 
 ```bash
-iorg organize -c OneDrive --app AIA --tenant nomsa \
-  --source /Users/Shared/ServerData/GDriveData/TestAfricaStage/Images/NOMSA.net/ \
+iorg organize -c OneDrive --app AIA --tenant customer \
+  --source /Users/Shared/ServerData/GDriveData/TestCustomer/Images/NOMSA.net/ \
   --pathconv 3 --nameconv 3
 ```
 
-The command resolves `-c` through `Os.Config.Cloud`. `--app AIA --tenant nomsa`
-resolves `<configured cloud>/AIA/Image/nomsa`. Use `-r, --root` instead when the
+The command resolves `-c` through `Os.Config.Cloud`. `--app AIA --tenant customer`
+resolves `<configured cloud>/AIA/Image/customer`. Use `-r, --root` instead when the
 argument is already the exact ImageTree root; an explicit `-t, --tenant` is
 appended, or, when omitted, the final root segment remains the inferred tenant.
 `--subscriber` remains a compatibility alias for `--tenant`.
@@ -462,14 +480,14 @@ The help screen shows the resolved source, destination `ImageRoot`, subscriber, 
 Without `-d`, each copied image is printed as a compact file name:
 
 ```text
-nomsa-concert-11.jpg
+customer-concert-11.jpg
 SD-State-Sony-149.jpg
 ```
 
 With `-d`, each copied image is printed with full destination and source paths:
 
 ```text
-/dest/nomsa/NomsaCon/NomsaConce/NomsaConcert_11.jpg  /source/nomsa-concert-11.jpg
+/dest/customer/CustomerCon/CustomerConce/CustomerConcert_11.jpg  /source/customer-concert-11.jpg
 ```
 
 The final summary reports how many detected source images were copied and groups any files that were not copied by failure reason.
@@ -477,7 +495,7 @@ The final summary reports how many detected source images were copied and groups
 To inspect every file owned by an exact ItemId without deleting it, use `clean`:
 
 ```bash
-iorg clean NomsaConcert -c OneDrive --root LiveAfricaStageImage/nomsa
+iorg clean CustomerConcert -c OneDrive --root LiveCustomerImage/customer
 ```
 
 This selects the complete exact-ItemId family, including numbered sources,
@@ -486,14 +504,14 @@ select a bucket-sharing ItemId with a similar prefix. Item cleanup is a dry run
 unless `--force` is supplied:
 
 ```bash
-iorg clean NomsaConcert -c OneDrive --root LiveAfricaStageImage/nomsa --force
+iorg clean CustomerConcert -c OneDrive --root LiveCustomerImage/customer --force
 ```
 
 To explicitly purge rendered derivatives throughout one subscriber tree while
 preserving source images and diagram artifacts, use the separate cache form:
 
 ```bash
-iorg clean --cache -c OneDrive --root LiveAfricaStageImage/nomsa
+iorg clean --cache -c OneDrive --root LiveCustomerImage/customer
 ```
 
 `--cache` is itself the explicit bounded operation and does not take an ItemId.
@@ -501,16 +519,16 @@ iorg clean --cache -c OneDrive --root LiveAfricaStageImage/nomsa
 Discover files without mutation:
 
 ```bash
-iorg list 'WorkInPro*' -c OneDrive --app AIA --tenant Nomsa
-iorg list '*.puml' -c OneDrive --root LiveAfricaStageImage --tenant Nomsa
+iorg list 'WorkInPro*' -c OneDrive --app AIA --tenant Customer
+iorg list '*.puml' -c OneDrive --root LiveCustomerImage --tenant Customer
 ```
 
 Move an exact ItemId family, optionally renaming it and selecting its destination
 path convention:
 
 ```bash
-iorg move AfricanBrisket -c OneDrive --app AIA --tenant Nomsa --pathconv 3
-iorg move AfricanBrisket AfricanDinner -c OneDrive --root LiveAfricaStageImage --tenant Nomsa --pathconv 4
+iorg move AfricanBrisket -c OneDrive --app AIA --tenant Customer --pathconv 3
+iorg move AfricanBrisket AfricanDinner -c OneDrive --root LiveCustomerImage --tenant Customer --pathconv 4
 ```
 
 Useful options:
@@ -554,7 +572,7 @@ These binaries can be deployed without a separate .NET runtime installation.
 
 ## release notes
 
-- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.4.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.4.md)
+- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.5.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.5.md)
 
 ## Validation
 
