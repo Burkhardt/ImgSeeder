@@ -1,5 +1,11 @@
 # ImgSeeder
 
+## 4.5.8
+
+Coordinated 4.5.8 release; public behavior is aligned with the synchronized platform.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md).
+
 ## 4.5.7
 
 Coordinated 4.5.7 release; public behavior is aligned with the synchronized platform.
@@ -584,7 +590,7 @@ These binaries can be deployed without a separate .NET runtime installation.
 
 ## release notes
 
-- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.7.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.7.md)
+- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md)
 
 ## Validation
 
