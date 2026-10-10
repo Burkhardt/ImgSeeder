@@ -30,7 +30,28 @@ Coordinated 4.5.4 release; public behavior is aligned with the synchronized plat
 
 Release notes: [ImgSeeder_RELEASE_NOTES_4.5.4.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.4.md).
 
-## 4.5.3
+<details>
+<summary><b>Previous Versions</b></summary>
+
+### 4.5.3
+
+Coordinated 4.5.3 release; public behavior is aligned with the synchronized platform.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.3.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.3.md).
+
+### 4.5.2
+
+Coordinated 4.5.2 release; public behavior is aligned with the synchronized platform.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.2.md).
+
+### 4.5.0
+
+Coordinated 4.5.0 dependencies including JsonPit live references; iorg reports version 4.5.0.
+
+Release notes: [ImgSeeder_RELEASE_NOTES_4.5.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.0.md).
+
+</details>
 
 Coordinated 4.5.3 release; public behavior is aligned with the synchronized platform.
 
@@ -432,31 +453,37 @@ This tool is part of the RAIkeep package family:
 - `ImgSeeder` (`iorg` command)
 - `PitSeeder`
 
-## Install
+## Installation
 
-Install the NuGet tool with:
+### 1. User Global Tool Install
 
 ```bash
 dotnet tool install --global ImgSeeder
 ```
 
-On macOS or Linux, a practical option is to install directly into a directory on your `PATH`:
-
-```bash
-sudo dotnet tool install ImgSeeder --tool-path /usr/local/bin
-```
-
-Update an existing installation with:
+To update:
 
 ```bash
 dotnet tool update --global ImgSeeder
 ```
 
-To update an installation in `/usr/local/bin`:
+*(Requires `~/.dotnet/tools` in your `$PATH`)*
+
+### 2. Direct Install to `/usr/local/bin` (Recommended for macOS & Linux)
+
+Install directly to `/usr/local/bin` so no `$PATH` modification is needed:
+
+```bash
+sudo dotnet tool install ImgSeeder --tool-path /usr/local/bin
+```
+
+To update:
 
 ```bash
 sudo dotnet tool update ImgSeeder --tool-path /usr/local/bin
 ```
+
+> **Note:** `sudo` is only required during installation and updates to write to `/usr/local/bin`. Running the installed CLI command never requires `sudo` or elevated privileges.
 
 ## Usage
 
