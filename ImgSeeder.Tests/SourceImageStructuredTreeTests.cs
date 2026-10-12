@@ -269,24 +269,21 @@ public class SourceImageStructuredTreeTests
 
 	private static RaiPath NewTestRoot()
 	{
-		var root = Os.TempDir / "RAIkeep" / "iorg-tests" / Guid.NewGuid().ToString("N");
-		Cleanup(root);
-		root.mkdir();
-		return root;
+		return NewConfiguredCloudRoot("cr060");
 	}
 
-	private static RaiPath NewConfiguredCloudRoot()
+	private static RaiPath NewConfiguredCloudRoot(string label = "cr022")
 	{
-		foreach (var provider in new[] { "OneDrive", "Dropbox", "GoogleDrive", "ICloudDrive" })
+		foreach (var provider in new[] { "GoogleDriveRainer", "GoogleDrive" })
 		{
 			string? configured = Os.Config?.Cloud?[provider];
 			if (string.IsNullOrWhiteSpace(configured)) continue;
 			var providerRoot = new RaiPath(configured);
 			if (!providerRoot.Exists()) continue;
-			return (providerRoot / "RAIkeep" / "iorg-tests" / "cr022" / Guid.NewGuid().ToString("N")).mkdir();
+			return (providerRoot / "RAIkeep" / "iorg-tests" / label / Guid.NewGuid().ToString("N")).mkdir();
 		}
 
-		Assert.Skip("No configured CloudDrive is available for the CR022 ImgSeeder direct-write test.");
+		Assert.Skip("These ImgSeeder cloud tests require an existing GoogleDriveRainer or GoogleDrive root in Os.Config.Cloud.");
 		throw new InvalidOperationException("Assert.Skip did not terminate the test.");
 	}
 
