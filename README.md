@@ -1,10 +1,10 @@
 # ImgSeeder
 
-## Latest Version 4.5.8
+## Latest Version 4.5.9
 
 Image organization, cloud-safe ZIP import, and compact import receipts.
 
-Latest release notes: [ImgSeeder 4.5.8 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#458).
+Latest release notes: [ImgSeeder 4.5.9 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#459).
 
 ## Previous Versions
 
@@ -42,7 +42,7 @@ Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/
 
 ## ZIP import and compact receipts (CR049 / CR054 / CR060)
 
-The `-s`, `-o`, and `-i` options described below are CR060 changes pending release.
+CR060 adds the `-s`, `-o`, and `-i` options described below.
 
 `iorg` inspects ZIP subdirectories for supported images, preserves the archive,
 and copies directly from its temporary extraction workspace into the ImageTree.

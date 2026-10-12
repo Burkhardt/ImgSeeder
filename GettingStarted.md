@@ -2,7 +2,7 @@
 
 `iorg` is the RAIkeep command-line tool for organizing, validating, and managing images within an **ImageTree**.
 
-This guide includes CR060 options that are pending release; use a build from the current source tree until the next package is published.
+This guide covers the CR060 options prepared for the coordinated 4.5.9 release. Until publication, use a build from the current source tree.
 
 This guide walks through setting up cloud storage integration, installing the tools, performing bulk imports from a ZIP archive, and managing/cleaning images (e.g. for the sample order-sheet photo archive).
 
