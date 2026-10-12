@@ -68,7 +68,7 @@ public sealed class ImageImportTests : IDisposable
         using var json = JsonDocument.Parse(serialized);
         var result = json.RootElement;
         Assert.Equal(2, result.GetProperty("ReceiptVersion").GetInt32());
-        Assert.Equal("CustomerOrder", result.GetProperty("BaseItemId").GetString());
+		Assert.Equal("CustomerOrder26", result.GetProperty("BaseItemId").GetString());
         Assert.Equal("ItemIdTree8x2", result.GetProperty("PathConvention").GetString());
         Assert.Equal("Structured", result.GetProperty("NamingConvention").GetString());
         Assert.Equal(1, result.GetProperty("Range").GetProperty("Start").GetInt32());
@@ -79,7 +79,7 @@ public sealed class ImageImportTests : IDisposable
         Assert.False(result.TryGetProperty("Status", out _));
         foreach (var number in Enumerable.Range(1, 193))
         {
-            var target = new ImageTreeFile(Destination, "CustomerOrder", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = number };
+			var target = new ImageTreeFile(Destination, "CustomerOrder26", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = number };
             Assert.True(target.Exists(), target.FullName);
         }
         var repeat = await Import(Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-26-{n}.jpg", "photo-" + n))));

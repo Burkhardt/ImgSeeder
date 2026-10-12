@@ -49,12 +49,57 @@ public sealed class ImportCliTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(root, "images")));
     }
 
+    [Theory]
+    [InlineData("-o")]
+    [InlineData("--out")]
+    [InlineData("--receipt")]
+    public void OrganizeGeneratesReceiptIdAndWritesOutputFileWithShortSourceOption(string outputOption)
+    {
+        Directory.CreateDirectory(root);
+        var zipPath = Path.Combine(root, "photos.zip");
+        using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        using (var stream = zip.CreateEntry("Order-Sheet-26-10.jpg").Open()) stream.Write(Photo);
+        var receiptPath = Path.Combine(root, "receipts", "import.json");
+
+        var run = Run("organize", "-s", zipPath, "--root", Path.Combine(root, "images"),
+            "--tenant", "Customer", outputOption, receiptPath);
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.True(File.Exists(receiptPath));
+        using var receipt = JsonDocument.Parse(File.ReadAllText(receiptPath));
+        Assert.StartsWith("Import_", receipt.RootElement.GetProperty("Id").GetString());
+        Assert.Equal("OrderSheet26", receipt.RootElement.GetProperty("Exceptions")[0].GetProperty("ItemId").GetString());
+        Assert.Equal(receipt.RootElement.GetRawText(), JsonDocument.Parse(run.StandardOutput).RootElement.GetRawText());
+    }
+
+    [Fact]
+    public void NumericStemAndSingleNumberResolveToDistinctImportDestinations()
+    {
+        Directory.CreateDirectory(root);
+        var zipPath = Path.Combine(root, "distinct.zip");
+        using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            foreach (var name in new[] { "Order-Sheet-26-10.jpg", "Order-Sheet-26.jpg" })
+                using (var stream = zip.CreateEntry(name).Open()) stream.Write(Photo);
+        }
+
+        var run = Run("organize", "--source", zipPath, "--root", Path.Combine(root, "images"),
+            "--tenant", "Customer", "--json");
+
+        Assert.Equal(0, run.ExitCode);
+        using var receipt = JsonDocument.Parse(run.StandardOutput);
+        Assert.Equal(2, receipt.RootElement.GetProperty("Summary").GetProperty("Copied").GetInt32());
+        Assert.Equal(2, receipt.RootElement.GetProperty("Exceptions").GetArrayLength());
+        Assert.Contains("OrderSheet26_010.jpg", run.StandardOutput);
+        Assert.Contains("OrderSheet_026.jpg", run.StandardOutput);
+    }
+
     [Fact]
     public void ArgumentErrorsDoNotPolluteJsonStdout()
     {
         foreach (var args in new[]
         {
-            new[] { "organize", "--source", "source.zip", "--root", root, "--json" },
+            new[] { "organize", "--source", "source.zip", "--root", root, "--out", "" },
             new[] { "organize", "--source", "source.zip", "--root", root, "--json", "--import-id", "{Placeholder}" },
             new[] { "organize", "--source", "source.zip", "--source-url", "https://example.org/archive.zip", "--root", root, "--json", "--import-id", "Photos001" },
             new[] { "clean", "Photo", "--root", root, "--exif", "*" }

@@ -8,7 +8,6 @@ namespace Iorg.Tests;
 public class SourceImageStructuredTreeTests
 {
 	private const string Subscriber = "nomsa";
-	private static readonly RaiRelPath SourceRelPath = new("TestAfricaStage/Images/NOMSA.net/");
 
 	public static TheoryData<string, string, int, string, string> MixedSourceNames => new()
 	{
@@ -27,13 +26,12 @@ public class SourceImageStructuredTreeTests
 		string expectedTopdir,
 		string expectedSubdir)
 	{
-		var sourceRoot = GoogleDriveSourceRoot();
-		var sourceFile = new RaiFile(sourceRoot, sourceFileName);
-		Assert.True(sourceFile.Exists(), $"Missing test image: {sourceFile.FullName}");
-
 		var testRoot = NewTestRoot();
 		try
 		{
+			var originalRoot = (testRoot / "original").mkdir();
+			var sourceFile = new TextFile(originalRoot, sourceFileName);
+			sourceFile.DeleteAll().Append("image bytes").Save();
 			var testSourceRoot = testRoot / "source";
 			var testSourceFile = new RaiFile(testSourceRoot, sourceFile.NameWithExtension);
 			testSourceFile.mkdir();
@@ -82,13 +80,12 @@ public class SourceImageStructuredTreeTests
 	[Fact]
 	public void Organize_DebugOutputWritesDestinationAndSourceFullPaths()
 	{
-		var sourceRoot = GoogleDriveSourceRoot();
-		var sourceFile = new RaiFile(sourceRoot, "nomsa-concert-11.jpg");
-		Assert.True(sourceFile.Exists(), $"Missing test image: {sourceFile.FullName}");
-
 		var testRoot = NewTestRoot();
 		try
 		{
+			var originalRoot = (testRoot / "original").mkdir();
+			var sourceFile = new TextFile(originalRoot, "nomsa-concert-11.jpg");
+			sourceFile.DeleteAll().Append("image bytes").Save();
 			var testSourceRoot = testRoot / "source";
 			var testSourceFile = new RaiFile(testSourceRoot, sourceFile.NameWithExtension);
 			testSourceFile.mkdir();
@@ -268,17 +265,6 @@ public class SourceImageStructuredTreeTests
 		{
 			Cleanup(testRoot);
 		}
-	}
-
-	private static RaiPath GoogleDriveSourceRoot()
-	{
-		var cloudDir = Os.Config?.Cloud?["GoogleDrive"];
-		Assert.False(string.IsNullOrWhiteSpace((string?)cloudDir),
-			"This test requires Os.Config.Cloud.GoogleDrive to be configured.");
-
-		var root = new RaiPath((string)cloudDir) / SourceRelPath;
-		Assert.True(root.Exists(), $"Missing GoogleDrive test image root: {root.FullPath}");
-		return root;
 	}
 
 	private static RaiPath NewTestRoot()

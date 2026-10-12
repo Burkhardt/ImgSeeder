@@ -40,47 +40,43 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
-## ZIP import and compact receipts (CR049 / CR054)
+## ZIP import and compact receipts (CR049 / CR054 / CR060)
+
+The `-s`, `-o`, and `-i` options described below are CR060 changes pending release.
 
 `iorg` inspects ZIP subdirectories for supported images, preserves the archive,
 and copies directly from its temporary extraction workspace into the ImageTree.
 This example imports a batch named `Customer-Order-Sheet-26-1.jpg` through
-`Customer-Order-Sheet-26-193.jpg`:
+`Customer-Order-Sheet-26-193.jpg`. `--import-id` is optional for JSON receipts:
 
 ```bash
-iorg organize --source ~/Downloads/orders.zip \
+iorg organize -s ~/Downloads/orders.zip \
   --root /srv/images --tenant Customer --pathconv 3 --nameconv 3 \
   --import-id Import_OrderPhotos --activity-id OrderPhotos \
-  --json > import-receipt.json
-import_exit=$?
+  -o import-receipt.json --json
 
 jq '{Id, ReceiptVersion, BaseItemId, Range, Ranges, Summary, Exceptions, Error}' import-receipt.json
-
-# Buffer first: a failed import must not automatically seed a receipt downstream.
-if [ "$import_exit" -eq 0 ] &&
-   jq -e '.Class == "ImageImport" and .Summary.Failed == 0 and .Error == null' import-receipt.json >/dev/null; then
-  pits seed Object --source - -r /srv/pits/Customer < import-receipt.json
-fi
+iorg list 'CustomerOrderSheet26*' --root /srv/images --tenant Customer
+iorg list CustomerOrderSheet26 -i 10 --root /srv/images --tenant Customer
 ```
 
-Python consumers can use `jpit seed Object - -r /srv/pits/Customer` or
-`jpit put Object - -r /srv/pits/Customer` after the same success check.
-Python package delivery and validation are coordinated independently.
+For an end-to-end walkthrough, see [GettingStarted.md](https://github.com/Burkhardt/ImgSeeder/blob/main/GettingStarted.md).
+
 A direct HTTPS ZIP endpoint can replace `--source` with
 `--source-url 'https://example.org/orders.zip'`; provider login/share pages are
 not ZIP downloads. Source URL credentials and query strings are not persisted.
 
 ### How names and paths are derived
 
-`ImageFile.EasyFileName` owns normalization. A terminal run of hyphen- or
-underscore-separated numeric tokens is removed from the descriptive stem; the
-last token supplies `ImageNumber`. Separated uppercase words become PascalCase.
+`ImageFile.EasyFileName` owns normalization. Only the final hyphen- or
+underscore-separated numeric token supplies `ImageNumber`; earlier numeric
+tokens remain in the PascalCase stem. Separated uppercase words become PascalCase.
 
 ```text
 Source:         Customer-Order-Sheet-26-10.jpg
-BaseItemId:     CustomerOrderSheet
+BaseItemId:     CustomerOrderSheet26
 ImageNumber:    10
-Target:         Customer/CustomerOr/CustomerOrderSheet_010.jpg
+Target:         Customer/CustomerOr/CustomerOrderSheet26_010.jpg
 ```
 
 `Order_SHEET_001.jpg` becomes `OrderSheet_001.jpg`. Underscores do not remain in
@@ -102,7 +98,7 @@ and SVG siblings; migrate existing numbered diagram paths together.
 A clean homogeneous sequence produces one compact descriptor, not a per-file list:
 
 ```json
-{"Id":"Import_OrderPhotos","Class":"ImageImport","ReceiptVersion":2,"BaseItemId":"CustomerOrderSheet","PathConvention":"ItemIdTree8x2","NamingConvention":"Structured","Range":{"Start":1,"End":193,"Count":193,"Ext":"jpg"},"ActivityId":"OrderPhotos","Tenant":"Customer","Source":{"Kind":"Zip","Name":"orders.zip"},"Summary":{"Copied":193,"Unchanged":0,"Skipped":0,"Failed":0}}
+{"Id":"Import_OrderPhotos","Class":"ImageImport","ReceiptVersion":2,"BaseItemId":"CustomerOrderSheet26","PathConvention":"ItemIdTree8x2","NamingConvention":"Structured","Range":{"Start":1,"End":193,"Count":193,"Ext":"jpg"},"ActivityId":"OrderPhotos","Tenant":"Customer","Source":{"Kind":"Zip","Name":"orders.zip"},"Summary":{"Copied":193,"Unchanged":0,"Skipped":0,"Failed":0}}
 ```
 
 The clean 193-image regression receipt is below 500 UTF-8 bytes before Pit history
@@ -126,7 +122,7 @@ jq '.Exceptions[]? | {SourceEntry, ItemId, ImageNumber, RelativePath, Status, Er
 Consumers reconstruct paths using the existing classes and enums:
 
 ```csharp
-var image = new ImageTreeFile(tenantRoot, "CustomerOrderSheet", "", "jpg",
+var image = new ImageTreeFile(tenantRoot, "CustomerOrderSheet26", "", "jpg",
     PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured)
 {
     ImageNumber = 10
@@ -141,7 +137,8 @@ activity with `ActivityId` and contains no top-level lifecycle `Status`.
 Activity lifecycle state remains in its own Pit. The library retains its
 operational result in memory for CLI exit handling.
 
-`--json` writes one JSON entity to stdout and diagnostics to stderr. Successful
+`--json` writes one JSON entity to stdout and diagnostics to stderr. `-o`,
+`--out`, or `--receipt` also writes the receipt to the named file. Successful
 imports exit 0; preflight, copying, or cleanup failures exit 1. A runtime failure
 may leave successful copies; inspect `Summary`, `Exceptions`, and `Error`.
 An early argument error may produce stderr only. A local copy does not certify

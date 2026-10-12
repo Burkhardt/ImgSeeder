@@ -65,10 +65,10 @@ public static class Messages
 			var lines = new List<string>
 			{
 				HelpLine("Commands", Icons.Info, "organize, list, move, clean"),
-				"  iorg organize (--source <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3>",
-				"  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--json|--quiet]",
+				"  iorg organize ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-o|--out <file>] [--import-id <id>]",
+				"  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--json|--quiet]",
 				"  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]",
-				"  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [--force]",
+				"  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--force]",
 				"  iorg clean --cache ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>]",
 				HelpLine("-h, --help", Icons.Help, "print out all options"),
 				HelpLine("-v, --version", Icons.Info, "print version info"),
@@ -525,10 +525,13 @@ public static class ImageOrganizer
 		string itemId,
 		bool force,
 		TextWriter? output = null,
-		bool debug = false)
+		bool debug = false,
+		int? imageNumber = null)
 	{
 		ArgumentNullException.ThrowIfNull(subscriberRoot);
 		ValidateItemId(itemId, nameof(itemId));
+		if (imageNumber is <= 0)
+			throw new ArgumentOutOfRangeException(nameof(imageNumber), "Image number must be positive.");
 		var homes = Enum.GetValues<PathConventionType>()
 			.Select(convention => new ItemTreePath(subscriberRoot, itemId, convention))
 			.Select(home => (Home: home, Files: home.SelectFiles()))
@@ -538,6 +541,7 @@ public static class ImageOrganizer
 			.ToList();
 		var files = homes
 			.SelectMany(candidate => candidate.Files)
+			.Where(file => imageNumber is null || new ImageFile(file.FullName, ImageNamingConvention.Structured).ImageNumber == imageNumber)
 			.GroupBy(file => file.FullName, StringComparer.Ordinal)
 			.Select(group => group.First())
 			.OrderBy(file => file.FullName, StringComparer.Ordinal)
@@ -916,14 +920,14 @@ internal static class Program
 	private static int RunOrganizeCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["--source", "--source-url", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
+			.Concat(["-s", "--source", "--source-url", "-o", "--out", "--receipt", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count > 1)
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
 
-		var source = ParamValue(args, "--source");
+		var source = ParamValue(args, "--source", "-s");
 		var sourceUrl = ParamValue(args, "--source-url");
 		if ((source is null) == (sourceUrl is null)) throw new ArgumentException("Specify exactly one of --source or --source-url.");
 		Uri? url = null;
@@ -931,8 +935,12 @@ internal static class Program
 			throw new ArgumentException("--source-url requires a direct HTTPS URL without embedded credentials.");
 		var importId = ParamValue(args, "--import-id");
 		var exif = ParamValue(args, "--exif");
-		var json = HasOption(args, "--json") || exif is not null;
-		if (json && importId is null) throw new ArgumentException("--json or --exif requires --import-id for the ImageImport receipt.");
+		var receiptPath = ParamValue(args, "-o", "--out", "--receipt");
+		if (receiptPath is not null && string.IsNullOrWhiteSpace(receiptPath))
+			throw new ArgumentException("--out requires a non-empty file path.");
+		var json = HasOption(args, "--json") || exif is not null || receiptPath is not null;
+		if (json && string.IsNullOrWhiteSpace(importId))
+			importId = $"Import_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}";
 		var useImport = url is not null || string.Equals(Path.GetExtension(source), ".zip", StringComparison.OrdinalIgnoreCase) ||
 			json || importId is not null || exif is not null || HasOption(args, "--activity-id", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds");
 		var root = RequiredCommandRoot(args);
@@ -959,7 +967,14 @@ internal static class Program
 				(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
 			var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), ResolveCommandSubscriberRoot(rootBinding),
 				rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif).GetAwaiter().GetResult();
-			if (json) Console.WriteLine(JsonSerializer.Serialize(receipt));
+			var receiptJson = JsonSerializer.Serialize(receipt);
+			if (receiptPath is not null)
+			{
+				var outputPath = Path.GetFullPath(receiptPath);
+				Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+				File.WriteAllText(outputPath, receiptJson + Environment.NewLine);
+			}
+			if (json) Console.WriteLine(receiptJson);
 			else Console.WriteLine($"{receipt.Status}: {receipt.Summary.Copied} copied, {receipt.Summary.Unchanged} unchanged, {receipt.Summary.Skipped} skipped, {receipt.Summary.Failed} failed.");
 			if (receipt.Error is not null) Console.Error.WriteLine("error: " + receipt.Error);
 			foreach (var row in receipt.Files)
@@ -982,17 +997,29 @@ internal static class Program
 		return value;
 	}
 
+	private static int? OptionalImageNumber(string[] args)
+	{
+		var raw = ParamValue(args, "-i", "--image");
+		if (raw is null) return null;
+		if (!int.TryParse(raw, out var value) || value <= 0)
+			throw new ArgumentException("-i/--image requires a positive image number.");
+		return value;
+	}
+
 	private static int RunCleanCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "-i", "--image"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--cache", "--force"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		var cacheOnly = HasOption(args, "--cache");
+		var imageNumber = OptionalImageNumber(args);
 		if (cacheOnly && positionals.Count != 0)
 			throw new ArgumentException("clean --cache does not accept an ItemId.");
+		if (cacheOnly && imageNumber is not null)
+			throw new ArgumentException("clean --cache does not accept --image.");
 		if (cacheOnly && HasOption(args, "--force"))
 			throw new ArgumentException("clean --cache is already explicit and does not accept --force.");
 		if (!cacheOnly && positionals.Count != 1)
@@ -1011,7 +1038,8 @@ internal static class Program
 				subscriberRoot,
 				positionals[0],
 				HasOption(args, "--force"),
-				debug: HasOption(args, "-d", "--debug"));
+				debug: HasOption(args, "-d", "--debug"),
+				imageNumber: imageNumber);
 		Messages.WriteSuccess($"{report.DeletedCount} file(s) {(report.Force ? "deleted" : "selected for deletion")}.");
 		return report.FailedCount == 0 ? 0 : 1;
 	}
@@ -1019,7 +1047,7 @@ internal static class Program
 	private static int RunListCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "--exif"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "--exif", "-i", "--image"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1041,7 +1069,13 @@ internal static class Program
 			CommandSubscriber(args),
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
-		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, positionals[0]);
+		var imageNumber = OptionalImageNumber(args);
+		var itemIdFilter = imageNumber is not null && !positionals[0].Contains('*') && !positionals[0].Contains('?') && !positionals[0].Contains('.')
+			? positionals[0] : null;
+		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, itemIdFilter is null ? positionals[0] : itemIdFilter + "*")
+			.Where(file => imageNumber is null || new ImageFile(file.FullName, ImageNamingConvention.Structured).ImageNumber == imageNumber)
+			.Where(file => itemIdFilter is null || string.Equals(new ImageFile(file.FullName, ImageNamingConvention.Structured).ItemId, itemIdFilter, StringComparison.Ordinal))
+			.ToList();
 
 		if (exif is not null)
 		{
@@ -1251,12 +1285,12 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] (--source <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) (-p|--pathconv) <1|2|3|4> (-n|--nameconv) <1|2|3> [global options]",
+				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
 			{
-				"Usage: iorg list <FileNamePattern> [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
+				"Usage: iorg list <FileNamePattern> [-i|--image <nr>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
 				"List is strictly read-only and includes image, .puml, and .raid artifacts. --exif selects image metadata."
 			},
 			"move" => new[]
@@ -1266,7 +1300,7 @@ internal static class Program
 			},
 			"clean" => new[]
 			{
-				"Usage: iorg clean <ItemId> [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--force] [global options]",
+				"Usage: iorg clean <ItemId> [-i|--image <nr>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--force] [global options]",
 				"       iorg clean --cache [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [global options]",
 				"Item cleanup is a dry run unless --force is present; --cache explicitly deletes only rendered derivatives."
 			},
@@ -1285,9 +1319,13 @@ internal static class Program
 			WriteCommandHelpOption("-n|--nameconv:", Messages.NamingConventionDescription());
 		if (command is "list" or "organize")
 			WriteCommandHelpOption("--exif:", "'*', one EXIF tag, or comma-separated tags/patterns; structured JSON output");
+		if (command is "list" or "clean")
+			WriteCommandHelpOption("-i|--image:", "select one positive image number and its derivatives");
 		if (command == "organize")
 		{
-			WriteCommandHelpOption("--import-id:", "receipt Id; required with --json or --exif; --activity-id optionally associates an Activity");
+			WriteCommandHelpOption("-s|--source:", "source directory or ZIP archive; --source-url accepts a direct HTTPS ZIP URL");
+			WriteCommandHelpOption("-o|--out:", "write receipt JSON to a file; --receipt is an alias");
+			WriteCommandHelpOption("--import-id:", "optional receipt Id; generated for JSON output when omitted; --activity-id associates an Activity");
 			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
 			Messages.WriteInfo("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
 		}

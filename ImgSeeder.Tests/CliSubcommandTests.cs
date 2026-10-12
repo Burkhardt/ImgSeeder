@@ -70,6 +70,35 @@ public sealed class CliSubcommandTests : IDisposable
 	}
 
 	[Fact]
+	public void ImageNumberFilter_ListsAndCleansOnlyTheSelectedImageAndDerivatives()
+	{
+		var destination = root / "number-filter" / "customer";
+		var item = new ItemTreePath(destination, "OrderSheet");
+		var selected = WriteArtifact(item, "OrderSheet_100.jpg");
+		var derivative = WriteArtifact(item, "OrderSheet_100_Large.jpg");
+		var other = WriteArtifact(item, "OrderSheet_101.jpg");
+		var unnumbered = WriteArtifact(item, "OrderSheet.raid");
+		var sibling = WriteArtifact(new ItemTreePath(destination, "OrderSheetOther"), "OrderSheetOther_100.jpg");
+
+		var listing = RunIorg("list", "OrderSheet", "-i", "100", "--root", destination.FullPath, "--json", "--nologo");
+		Assert.Equal(0, listing.exitCode);
+		Assert.Equal("[\"OrderSheet_100.jpg\",\"OrderSheet_100_Large.jpg\"]", listing.output.Trim());
+
+		var preview = RunIorg("clean", "OrderSheet", "--image", "100", "--root", destination.FullPath, "--nologo");
+		Assert.Equal(0, preview.exitCode);
+		Assert.Contains("2 file(s) selected for deletion", preview.output);
+		Assert.True(selected.Exists());
+
+		var run = RunIorg("clean", "OrderSheet", "-i", "100", "--root", destination.FullPath, "--force", "--nologo");
+		Assert.Equal(0, run.exitCode);
+		Assert.False(selected.Exists());
+		Assert.False(derivative.Exists());
+		Assert.True(other.Exists());
+		Assert.True(unnumbered.Exists());
+		Assert.True(sibling.Exists());
+	}
+
+	[Fact]
 	public void CleanCache_DeletesOnlyRenderedDerivatives_AndPreservesSourcesAndDiagramFiles()
 	{
 		var destination = root / "cache-clean-dest" / "nomsa";
