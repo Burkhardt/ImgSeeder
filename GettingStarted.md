@@ -2,9 +2,8 @@
 
 `iorg` is the RAIkeep command-line tool for organizing, validating, and managing images within an **ImageTree**.
 
-This guide covers CR060 in 4.5.9 and the CR061 upsert behavior on `main` for
-the planned 4.5.10 release. Until 4.5.10 is published, use a build from the
-current source tree for ReceiptVersion 3 and `--no-overwrite`.
+This guide covers ImgSeeder 4.5.10, including CR060 filename handling and
+CR061 idempotent image imports.
 
 This guide walks through setting up cloud storage integration, installing the tools, performing bulk imports from a ZIP archive, and managing/cleaning images (e.g. for the sample order-sheet photo archive).
 
