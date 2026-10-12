@@ -4,14 +4,11 @@
 
 Image organization, cloud-safe ZIP import, and compact import receipts.
 
-Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md).
+Latest release notes: [ImgSeeder 4.5.8 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#458).
 
-<details>
-<summary><b>Previous Versions</b></summary>
+## Previous Versions
 
-Earlier coordinated releases are recorded in the [RAIkeep release-note archive](https://github.com/Burkhardt/RAIkeep/tree/main/doc).
-
-</details>
+For release notes and changelogs of earlier releases, see the [ImgSeeder 4.x Release Notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md).
 
 ## Terminal font
 
@@ -256,7 +253,7 @@ and the [EXIF definitions](https://www.cipa.jp/std/documents/e/DC-X008-Translati
 
 ## Installation
 
-### 1. User Global Tool Install
+### .NET global tool
 
 ```bash
 dotnet tool install --global ImgSeeder
@@ -268,9 +265,9 @@ To update:
 dotnet tool update --global ImgSeeder
 ```
 
-*(Requires `~/.dotnet/tools` in your `$PATH`)*
+*(Requires `~/.dotnet/tools` on your PATH.)*
 
-### 2. Direct Install to `/usr/local/bin` (Recommended for macOS & Linux)
+### .NET tool in `/usr/local/bin` (Recommended for macOS & Linux)
 
 Install directly to `/usr/local/bin` so no `$PATH` modification is needed:
 
@@ -284,7 +281,7 @@ To update:
 sudo dotnet tool update ImgSeeder --tool-path /usr/local/bin
 ```
 
-> **Note:** `sudo` is only required during installation and updates to write to `/usr/local/bin`. Running the installed CLI command never requires `sudo` or elevated privileges.
+`sudo` is needed to write to `/usr/local/bin` during installation and updates. Running `iorg` does not require it.
 
 ## Usage
 
