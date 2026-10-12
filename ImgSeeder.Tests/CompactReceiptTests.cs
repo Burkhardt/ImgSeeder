@@ -22,6 +22,7 @@ public sealed class CompactReceiptTests
         Assert.False(result.TryGetProperty("Range", out _));
         Assert.Equal(2, result.GetProperty("Ranges").GetArrayLength());
         Assert.Equal(500, receipt.Summary.Copied);
+		Assert.Equal(0, receipt.Summary.Updated);
         Assert.All(receipt.Ranges!, r => { Assert.Equal("Structured", r.NamingConvention); Assert.Equal("ItemIdTree8x2", r.PathConvention); });
     }
 
@@ -68,6 +69,21 @@ public sealed class CompactReceiptTests
         Assert.Single(receipt.Exceptions!);
         Assert.Equal(1, receipt.Summary.Skipped);
     }
+
+	[Fact]
+	public void UpdatedRangeRetainsSparseDerivativeDiagnostic()
+	{
+		var receipt = Receipt();
+		Add(receipt, "Order", 1, 3);
+		receipt.Files[1].Status = "Updated";
+		receipt.Files[1].Error = "Derivative invalidation failed.";
+		receipt.Compact();
+		Assert.Equal(1, receipt.Summary.Updated);
+		Assert.Equal(1, receipt.Range!.Updated);
+		Assert.Single(receipt.Exceptions!);
+		Assert.Equal("Updated", receipt.Exceptions![0].Status);
+		Assert.Contains("Derivative invalidation failed", receipt.Exceptions[0].Error);
+	}
 
     private static ImageImportReceipt Receipt(bool exif = false) => new()
     {

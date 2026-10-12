@@ -922,7 +922,7 @@ internal static class Program
 		var valueOptions = CommandGlobalValueOptions
 			.Concat(["-s", "--source", "--source-url", "-o", "--out", "--receipt", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--no-overwrite"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count > 1)
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
@@ -941,11 +941,9 @@ internal static class Program
 		var json = HasOption(args, "--json") || exif is not null || receiptPath is not null;
 		if (json && string.IsNullOrWhiteSpace(importId))
 			importId = $"Import_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}";
-		var useImport = url is not null || string.Equals(Path.GetExtension(source), ".zip", StringComparison.OrdinalIgnoreCase) ||
-			json || importId is not null || exif is not null || HasOption(args, "--activity-id", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds");
 		var root = RequiredCommandRoot(args);
-		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(ParamValue(args, "--pathconv", "-p") ?? (useImport ? "3" : RequiredCommandValue(args, "--pathconv", "-p")), "--pathconv");
-		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(ParamValue(args, "--nameconv", "-n") ?? (useImport ? "3" : RequiredCommandValue(args, "--nameconv", "-n")), "--nameconv");
+		var pathConvention = NormalizeNumberedCommandEnum<PathConventionType>(ParamValue(args, "--pathconv", "-p") ?? "3", "--pathconv");
+		var nameConvention = NormalizeNumberedCommandEnum<ImageNamingConvention>(ParamValue(args, "--nameconv", "-n") ?? "3", "--nameconv");
 		var subscriberOption = CommandSubscriber(args);
 		if (positionals.Count == 1 && !string.IsNullOrWhiteSpace(subscriberOption))
 			throw new ArgumentException("Specify the subscriber either positionally or with -t/--tenant, not both.");
@@ -955,38 +953,32 @@ internal static class Program
 			Messages.CloudProvider,
 			positionals.SingleOrDefault() ?? subscriberOption,
 			HasOption(args, "-c", "--cloudprovider", "--cloud"));
-		if (useImport)
+		if (!Enum.TryParse<PathConventionType>(pathConvention, true, out var pathMode) || !Enum.IsDefined(pathMode)) throw new ArgumentException("Invalid --pathconv.");
+		if (!Enum.TryParse<ImageNamingConvention>(nameConvention, true, out var nameMode) || !Enum.IsDefined(nameMode)) throw new ArgumentException("Invalid --nameconv.");
+		var entries = OptionalPositiveLimit(args, "--max-entries");
+		if (entries > int.MaxValue) throw new ArgumentException("--max-entries exceeds the supported integer range.");
+		var seconds = OptionalPositiveLimit(args, "--download-timeout-seconds");
+		if (seconds > 4_294_967) throw new ArgumentException("--download-timeout-seconds exceeds the supported timer range.");
+		var limits = new ImageImportLimits(OptionalPositiveLimit(args, "--max-archive-bytes"), OptionalPositiveLimit(args, "--max-expanded-bytes"),
+			(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
+		var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), ResolveCommandSubscriberRoot(rootBinding),
+			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif, noOverwrite: HasOption(args, "--no-overwrite")).GetAwaiter().GetResult();
+		var receiptJson = JsonSerializer.Serialize(receipt);
+		if (receiptPath is not null)
 		{
-			if (!Enum.TryParse<PathConventionType>(pathConvention, true, out var pathMode) || !Enum.IsDefined(pathMode)) throw new ArgumentException("Invalid --pathconv.");
-			if (!Enum.TryParse<ImageNamingConvention>(nameConvention, true, out var nameMode) || !Enum.IsDefined(nameMode)) throw new ArgumentException("Invalid --nameconv.");
-			var entries = OptionalPositiveLimit(args, "--max-entries");
-			if (entries > int.MaxValue) throw new ArgumentException("--max-entries exceeds the supported integer range.");
-			var seconds = OptionalPositiveLimit(args, "--download-timeout-seconds");
-			if (seconds > 4_294_967) throw new ArgumentException("--download-timeout-seconds exceeds the supported timer range.");
-			var limits = new ImageImportLimits(OptionalPositiveLimit(args, "--max-archive-bytes"), OptionalPositiveLimit(args, "--max-expanded-bytes"),
-				(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
-			var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), ResolveCommandSubscriberRoot(rootBinding),
-				rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif).GetAwaiter().GetResult();
-			var receiptJson = JsonSerializer.Serialize(receipt);
-			if (receiptPath is not null)
-			{
-				var outputPath = Path.GetFullPath(receiptPath);
-				Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-				File.WriteAllText(outputPath, receiptJson + Environment.NewLine);
-			}
-			if (json) Console.WriteLine(receiptJson);
-			else Console.WriteLine($"{receipt.Status}: {receipt.Summary.Copied} copied, {receipt.Summary.Unchanged} unchanged, {receipt.Summary.Skipped} skipped, {receipt.Summary.Failed} failed.");
-			if (receipt.Error is not null) Console.Error.WriteLine("error: " + receipt.Error);
-			foreach (var row in receipt.Files)
-			{
-				if (row.Error is not null) Console.Error.WriteLine($"{row.SourceEntry}: {row.Error}");
-				if (row.Exif is not null) foreach (var diagnostic in row.Exif.Diagnostics) Console.Error.WriteLine($"{row.SourceEntry}: {diagnostic}");
-			}
-			return receipt.Status == "Completed" && receipt.Error is null ? 0 : 1;
+			var outputPath = Path.GetFullPath(receiptPath);
+			Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+			File.WriteAllText(outputPath, receiptJson + Environment.NewLine);
 		}
-		var mapped = CommandGlobalArguments(args, rootBinding);
-		mapped.AddRange(["--source", source!, "--pathconv", pathConvention, "--nameconv", nameConvention, rootBinding.Subscriber]);
-		return RunMappedArguments(mapped.ToArray());
+		if (json) Console.WriteLine(receiptJson);
+		else Console.WriteLine($"{receipt.Status}: {receipt.Summary.Copied} copied, {receipt.Summary.Updated} updated, {receipt.Summary.Unchanged} unchanged, {receipt.Summary.Skipped} skipped, {receipt.Summary.Failed} failed.");
+		if (receipt.Error is not null) Console.Error.WriteLine("error: " + receipt.Error);
+		foreach (var row in receipt.Files)
+		{
+			if (row.Error is not null) Console.Error.WriteLine($"{row.SourceEntry}: {row.Error}");
+			if (row.Exif is not null) foreach (var diagnostic in row.Exif.Diagnostics) Console.Error.WriteLine($"{row.SourceEntry}: {diagnostic}");
+		}
+		return receipt.Status == "Completed" && receipt.Error is null ? 0 : 1;
 	}
 
 	private static long? OptionalPositiveLimit(string[] args, string option)
@@ -1285,7 +1277,7 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
+				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
@@ -1327,6 +1319,7 @@ internal static class Program
 			WriteCommandHelpOption("-o|--out:", "write receipt JSON to a file; --receipt is an alias");
 			WriteCommandHelpOption("--import-id:", "optional receipt Id; generated for JSON output when omitted; --activity-id associates an Activity");
 			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
+			WriteCommandHelpOption("--no-overwrite:", "reject differing existing images before writing any source image; default is verified in-place update");
 			Messages.WriteInfo("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
 		}
 

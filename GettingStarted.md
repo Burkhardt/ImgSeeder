@@ -2,7 +2,9 @@
 
 `iorg` is the RAIkeep command-line tool for organizing, validating, and managing images within an **ImageTree**.
 
-This guide covers the CR060 options prepared for the coordinated 4.5.9 release. Until publication, use a build from the current source tree.
+This guide covers CR060 in 4.5.9 and the CR061 upsert behavior on `main` for
+the planned 4.5.10 release. Until 4.5.10 is published, use a build from the
+current source tree for ReceiptVersion 3 and `--no-overwrite`.
 
 This guide walks through setting up cloud storage integration, installing the tools, performing bulk imports from a ZIP archive, and managing/cleaning images (e.g. for the sample order-sheet photo archive).
 
@@ -85,7 +87,8 @@ iorg organize \
 - `--subscriber Customer` (or `-t Customer`): The tenant/subscriber partition owning these photos.
 - `--source <file.zip>` (or `-s <file.zip>`): Path to the source archive.
 - `-o <file.json>` (or `--out` / `--receipt`): Writes the import receipt directly to the specified file.
-- `--json`: Emits compact `ReceiptVersion 2` structured JSON output. (Note: `--import-id` is optional; an ID is generated automatically if omitted).
+- `--json`: Emits compact `ReceiptVersion 3` structured JSON output. (Note: `--import-id` is optional; an ID is generated automatically if omitted).
+- `--no-overwrite`: Optional guard that rejects an archive before copying if any existing destination has different bytes. Without it, a rerun leaves identical images alone and updates changed images in place.
 
 ---
 
@@ -96,7 +99,7 @@ iorg organize \
 1. **Check summary counts:**
    ```bash
    jq '.Summary' import-receipt.json
-   # Output: {"Copied": 193, "Unchanged": 0, "Skipped": 0, "Failed": 0}
+   # Output: {"Copied": 193, "Updated": 0, "Unchanged": 0, "Skipped": 0, "Failed": 0}
    ```
 
 2. **Inspect compact contiguous ranges:**

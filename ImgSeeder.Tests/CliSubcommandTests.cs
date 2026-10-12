@@ -48,6 +48,25 @@ public sealed class CliSubcommandTests : IDisposable
 	}
 
 	[Fact]
+	public void OrganizeDirectoryRerunUsesSameUpsertBehaviorAsZipImport()
+	{
+		var sourceRoot = (root / "order-source").mkdir();
+		var source = WriteImage(sourceRoot, "order-sheet-01", "jpg");
+		var destination = root / "order-images" / "Customer";
+		var first = RunIorg("organize", "--source", sourceRoot.FullPath, "--root", destination.FullPath, "--nologo");
+		Assert.Equal(0, first.exitCode);
+		var image = new ImageTreeFile(destination, "OrderSheet", string.Empty, "jpg",
+			PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = 1 };
+		Assert.True(image.Exists());
+
+		File.WriteAllText(source.FullName, "revised image");
+		var second = RunIorg("organize", "--source", sourceRoot.FullPath, "--root", destination.FullPath, "--nologo");
+		Assert.Equal(0, second.exitCode);
+		Assert.Contains("1 updated", second.output);
+		Assert.Equal("revised image", File.ReadAllText(image.FullName));
+	}
+
+	[Fact]
 	public void CleanCommand_IsDryRunByDefault_AndForceDeletesExactItemFamily()
 	{
 		var destination = root / "clean-dest" / "nomsa";

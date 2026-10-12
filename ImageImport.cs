@@ -22,7 +22,7 @@ public sealed class ImageImportReceipt
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Id { get; init; }
 	public string Class => "ImageImport";
-	public int ReceiptVersion => 2;
+	public int ReceiptVersion => 3;
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? BaseItemId { get; private set; }
 	[JsonIgnore]
@@ -49,8 +49,9 @@ public sealed class ImageImportReceipt
 	public required string Tenant { get; init; }
 	public required ImageImportSource Source { get; init; }
 	public ImageImportSummary Summary => new(
-		Files.Count(f => f.Status == "Copied"), Files.Count(f => f.Status == "Unchanged"),
-		Files.Count(f => f.Status == "Skipped"), Files.Count(f => f.Status == "Failed"));
+		Files.Count(f => f.Status == "Copied"), Files.Count(f => f.Status == "Updated"),
+		Files.Count(f => f.Status == "Unchanged"), Files.Count(f => f.Status == "Skipped"),
+		Files.Count(f => f.Status == "Failed"));
 	// Retained in memory for diagnostics and existing library callers.
 	[JsonIgnore]
 	public List<ImageImportEntry> Files { get; } = [];
@@ -60,9 +61,9 @@ public sealed class ImageImportReceipt
 
 	internal void Compact()
 	{
-		var exceptions = Files.Where(f => f.Status is "Failed" or "Skipped").ToList();
+		var exceptions = Files.Where(f => f.Status is "Failed" or "Skipped" || f.Error is not null).ToList();
 		var ranges = new List<ImageImportNamedRange>();
-		foreach (var group in Files.Where(f => f.Status is "Copied" or "Unchanged")
+		foreach (var group in Files.Where(f => f.Status is "Copied" or "Updated" or "Unchanged")
 			.GroupBy(f => (f.ItemId, f.Ext)).OrderBy(g => g.Key.ItemId, StringComparer.Ordinal).ThenBy(g => g.Key.Ext, StringComparer.Ordinal))
 		{
 			var entries = group.OrderBy(f => f.ImageNumber).ToArray();
@@ -72,11 +73,12 @@ public sealed class ImageImportReceipt
 				while (end + 1 < entries.Length && entries[end + 1].ImageNumber == (long?)entries[end].ImageNumber + 1) end++;
 				if (end > start && entries[start].ImageNumber is >= 0)
 					ranges.Add(new(group.Key.ItemId!, PathMode.ToString(), NamingMode.ToString(),
-						entries[start].ImageNumber!.Value, entries[end].ImageNumber!.Value, end - start + 1, group.Key.Ext!));
+						entries[start].ImageNumber!.Value, entries[end].ImageNumber!.Value, end - start + 1, group.Key.Ext!,
+						entries[start..(end + 1)].Count(entry => entry.Status == "Updated")));
 				else
 				{
 					entries[start].Reason ??= "Singleton image outside a contiguous range.";
-					exceptions.Add(entries[start]);
+					if (!exceptions.Contains(entries[start])) exceptions.Add(entries[start]);
 				}
 				start = end + 1;
 			}
@@ -85,7 +87,7 @@ public sealed class ImageImportReceipt
 		{
 			var range = ranges[0];
 			BaseItemId = range.BaseItemId;
-			Range = new(range.Start, range.End, range.Count, range.Ext);
+			Range = new(range.Start, range.End, range.Count, range.Ext, range.Updated);
 		}
 		else if (ranges.Count > 1) Ranges = ranges;
 		if (exceptions.Count > 0) Exceptions = exceptions.OrderBy(e => e.SourceEntry, StringComparer.Ordinal).ToArray();
@@ -93,10 +95,10 @@ public sealed class ImageImportReceipt
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; internal set; }
 }
-public sealed record ImageImportNamedRange(string BaseItemId, string PathConvention, string NamingConvention, int Start, int End, int Count, string Ext);
-public sealed record ImageImportRange(int Start, int End, int Count, string Ext);
+public sealed record ImageImportNamedRange(string BaseItemId, string PathConvention, string NamingConvention, int Start, int End, int Count, string Ext, int Updated);
+public sealed record ImageImportRange(int Start, int End, int Count, string Ext, int Updated);
 public sealed record ImageImportSource(string Kind, string Name);
-public sealed record ImageImportSummary(int Copied, int Unchanged, int Skipped, int Failed);
+public sealed record ImageImportSummary(int Copied, int Updated, int Unchanged, int Skipped, int Failed);
 public sealed class ImageImportEntry
 {
 	public required string SourceEntry { get; init; }
@@ -129,17 +131,18 @@ public static class ImageImport
 		RaiPath destination, string tenant, ImageImportLimits limits,
 		PathConventionType pathConvention = PathConventionType.ItemIdTree8x2,
 		ImageNamingConvention namingConvention = ImageNamingConvention.Structured,
-		HttpClient? downloadClient = null, CancellationToken cancellationToken = default, string? exif = null)
+		HttpClient? downloadClient = null, CancellationToken cancellationToken = default, string? exif = null,
+		bool noOverwrite = false)
 		// Archive metadata inspection and filename parsing are synchronous work too.
 		// Dispatch the complete operation so a UI caller can safely await this API.
 		=> Task.Run(() => RunCoreAsync(source, sourceUrl, importId, activityId, destination,
-			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif), cancellationToken);
+			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif, noOverwrite), cancellationToken);
 
 	private static async Task<ImageImportReceipt> RunCoreAsync(
 		string? source, Uri? sourceUrl, string? importId, string? activityId,
 		RaiPath destination, string tenant, ImageImportLimits limits,
 		PathConventionType pathConvention, ImageNamingConvention namingConvention,
-		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif)
+		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif, bool noOverwrite)
 	{
 		if (importId is not null) PitItem.ValidateLiveId(importId);
 		if (activityId is not null) PitItem.ValidateLiveId(activityId);
@@ -227,7 +230,7 @@ public static class ImageImport
 					}
 					plan.Add(await PlanAsync(row, staged, entry.Length, destination, pathConvention, namingConvention, cancellationToken, exif));
 				}
-				await ApplyAsync(plan, receipt, cancellationToken);
+				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
 			}
 			else
 			{
@@ -250,7 +253,7 @@ public static class ImageImport
 					expanded += input.Length;
 					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif));
 				}
-				await ApplyAsync(plan, receipt, cancellationToken);
+				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
 			}
 		}
 		catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException or ArgumentException or UnauthorizedAccessException or HttpRequestException or OperationCanceledException or OverflowException or InvalidOperationException or System.Text.Json.JsonException)
@@ -301,25 +304,43 @@ public static class ImageImport
 		return new Candidate(row, target, source.OpenRead, length, hash);
 	}
 
-	private static async Task ApplyAsync(List<Candidate> plan, ImageImportReceipt receipt, CancellationToken ct)
+	private static async Task ApplyAsync(List<Candidate> plan, ImageImportReceipt receipt, CancellationToken ct, bool noOverwrite)
 	{
 		if (plan.Count == 0) throw new InvalidDataException("Source contained 0 eligible images.");
 		var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		// No destination creation until every collision has been checked.
+		// No destination creation until every incoming collision has been checked.
 		foreach (var candidate in plan)
-		{
 			if (!destinations.Add(candidate.Destination.FullName)) throw new InvalidDataException("Multiple source images resolve to the same destination: " + candidate.Entry.RelativePath);
-			if (candidate.Destination.Exists() && !await MatchesAsync(candidate, ct))
-				throw new InvalidDataException("Destination contains different content: " + candidate.Entry.RelativePath);
-		}
+		if (noOverwrite)
+			foreach (var candidate in plan)
+				if (candidate.Destination.Exists() && !await MatchesAsync(candidate, ct))
+					throw new InvalidDataException("Destination contains different content: " + candidate.Entry.RelativePath);
+		var cacheInvalidationFailed = false;
 		foreach (var candidate in plan)
 		{
 			try
 			{
 				if (candidate.Destination.Exists())
 				{
-					if (!await MatchesAsync(candidate, ct)) throw new IOException("Destination changed after preflight; existing file preserved.");
-					candidate.Entry.Status = "Unchanged";
+					if (await MatchesAsync(candidate, ct))
+						candidate.Entry.Status = "Unchanged";
+					else if (noOverwrite)
+						throw new IOException("Destination changed after preflight; existing file preserved.");
+					else
+					{
+						using var input = new LimitedReadStream(candidate.Open(), candidate.Length);
+						await candidate.Destination.WriteFromAsync(input, ct);
+						if (!await MatchesAsync(candidate, ct)) throw new IOException("Updated image failed content verification.");
+						candidate.Entry.Status = "Updated";
+						if (candidate.Entry.ImageNumber is >= 0)
+						{
+							candidate.Entry.Error = InvalidateDerivatives(candidate.Destination, candidate.Entry.ImageNumber.Value, ct);
+							if (candidate.Entry.Error is not null)
+							{
+								cacheInvalidationFailed = true;
+							}
+						}
+					}
 				}
 				else
 				{
@@ -336,7 +357,34 @@ public static class ImageImport
 			}
 		}
 		var summary = receipt.Summary;
-		receipt.Status = summary.Failed == 0 ? "Completed" : summary.Copied + summary.Unchanged > 0 ? "Partial" : "Failed";
+		receipt.Status = cacheInvalidationFailed ? "Partial"
+			: summary.Failed == 0 ? "Completed"
+			: summary.Copied + summary.Updated + summary.Unchanged > 0 ? "Partial" : "Failed";
+	}
+
+	private static string? InvalidateDerivatives(ImageTreeFile source, int imageNumber, CancellationToken ct)
+	{
+		IReadOnlyList<RaiFile> derivatives;
+		try { derivatives = source.ItemPath.SelectRenderedDerivatives(imageNumber); }
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+		{
+			return "Updated image, but derivative discovery failed: " + ex.Message;
+		}
+		var errors = new List<string>();
+		foreach (var derivative in derivatives)
+		{
+			try
+			{
+				ct.ThrowIfCancellationRequested();
+				derivative.rm();
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+			{
+				errors.Add(derivative.NameWithExtension + ": " + ex.Message);
+				if (ex is OperationCanceledException) break;
+			}
+		}
+		return errors.Count == 0 ? null : "Updated image, but derivative invalidation failed: " + string.Join("; ", errors);
 	}
 
 	private static async Task<bool> MatchesAsync(Candidate candidate, CancellationToken ct)

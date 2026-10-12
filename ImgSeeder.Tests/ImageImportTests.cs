@@ -52,6 +52,7 @@ public sealed class ImageImportTests : IDisposable
         Assert.Equal("Completed", again.Status);
         Assert.Equal(193, again.Summary.Unchanged);
         Assert.Equal(0, again.Summary.Copied);
+        Assert.Equal(0, again.Summary.Updated);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(receipt));
         Assert.Equal("ImageImport", json.RootElement.GetProperty("Class").GetString());
         Assert.False(json.RootElement.TryGetProperty("Modified", out _));
@@ -67,7 +68,7 @@ public sealed class ImageImportTests : IDisposable
         Assert.True(Encoding.UTF8.GetByteCount(serialized) < 500, serialized);
         using var json = JsonDocument.Parse(serialized);
         var result = json.RootElement;
-        Assert.Equal(2, result.GetProperty("ReceiptVersion").GetInt32());
+		Assert.Equal(3, result.GetProperty("ReceiptVersion").GetInt32());
 		Assert.Equal("CustomerOrder26", result.GetProperty("BaseItemId").GetString());
         Assert.Equal("ItemIdTree8x2", result.GetProperty("PathConvention").GetString());
         Assert.Equal("Structured", result.GetProperty("NamingConvention").GetString());
@@ -83,7 +84,7 @@ public sealed class ImageImportTests : IDisposable
             Assert.True(target.Exists(), target.FullName);
         }
         var repeat = await Import(Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-26-{n}.jpg", "photo-" + n))));
-        Assert.Equal(2, repeat.ReceiptVersion);
+		Assert.Equal(3, repeat.ReceiptVersion);
         Assert.Equal(193, repeat.Summary.Unchanged);
     }
 
@@ -141,14 +142,82 @@ public sealed class ImageImportTests : IDisposable
     }
 
     [Fact]
-    public async Task ExistingDifferentContentIsNeverOverwritten()
+    public async Task ExistingDifferentContentIsUpdatedInPlace()
     {
         var zip = Zip(new[] { ("photo-01.jpg", "first") });
         var first = await Import(zip);
         var target = Path.Combine(Destination.FullPath, first.Files[0].RelativePath!);
         var second = await Import(Zip(new[] { ("photo-01.jpg", "second") }));
-        Assert.Equal("Failed", second.Status);
-        Assert.Equal("first", File.ReadAllText(target));
+        Assert.Equal("Completed", second.Status);
+        Assert.Equal(1, second.Summary.Updated);
+        Assert.Equal(0, second.Summary.Copied);
+        Assert.Equal("second", File.ReadAllText(target));
+    }
+
+    [Fact]
+    public async Task ReimportChangedImageInvalidatesOnlyItsManagedDerivatives()
+    {
+        var original = Zip(Enumerable.Range(1, 3).Select(n => ($"Order-Sheet-{n:D3}.jpg", $"old-{n}")));
+        var first = await Import(original);
+        Assert.Equal(3, first.Summary.Copied);
+        var source = Path.Combine(Destination.FullPath, first.Files.Single(f => f.ImageNumber == 2).RelativePath!);
+        var bucket = Path.GetDirectoryName(source)!;
+        var staleThumb = Path.Combine(bucket, "OrderSheet_002_Thumb.webp");
+        var staleSmall = Path.Combine(bucket, "OrderSheet_002_Small.jpg");
+        var otherThumb = Path.Combine(bucket, "OrderSheet_001_Thumb.webp");
+        var otherSource = Path.Combine(Destination.FullPath, first.Files.Single(f => f.ImageNumber == 3).RelativePath!);
+        var unadornedWebp = Path.Combine(bucket, "OrderSheet_002.webp");
+        var diagram = Path.Combine(bucket, "OrderSheet_002.raid");
+        var sibling = Path.Combine(bucket, "OrderSheetExtra_002_Thumb.webp");
+        foreach (var file in new[] { staleThumb, staleSmall, otherThumb, unadornedWebp, diagram, sibling }) File.WriteAllText(file, "retain unless derived from 2");
+
+        var changed = await Import(Zip(Enumerable.Range(1, 3).Select(n => ($"Order-Sheet-{n:D3}.jpg", n == 2 ? "new-2" : $"old-{n}"))));
+
+        Assert.Equal("Completed", changed.Status);
+        Assert.Equal(0, changed.Summary.Copied);
+        Assert.Equal(1, changed.Summary.Updated);
+        Assert.Equal(2, changed.Summary.Unchanged);
+        Assert.Equal("new-2", File.ReadAllText(source));
+        Assert.Equal("old-3", File.ReadAllText(otherSource));
+        Assert.False(File.Exists(staleThumb));
+        Assert.False(File.Exists(staleSmall));
+        Assert.All(new[] { otherThumb, unadornedWebp, diagram, sibling }, file => Assert.True(File.Exists(file), file));
+        Assert.Equal(1, changed.Range!.Updated);
+        using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(changed));
+        Assert.Equal(1, serialized.RootElement.GetProperty("Range").GetProperty("Updated").GetInt32());
+        Assert.Equal(1, serialized.RootElement.GetProperty("Summary").GetProperty("Updated").GetInt32());
+    }
+
+    [Fact]
+    public async Task ExpandedArchiveAddsOnlyNewImagesAndPartialArchivePreservesOthers()
+    {
+        await Import(Zip(Enumerable.Range(1, 3).Select(n => ($"Order-Sheet-{n:D3}.jpg", $"photo-{n}"))));
+        var expanded = await Import(Zip(Enumerable.Range(1, 5).Select(n => ($"Order-Sheet-{n:D3}.jpg", $"photo-{n}"))));
+        Assert.Equal(2, expanded.Summary.Copied);
+        Assert.Equal(3, expanded.Summary.Unchanged);
+        Assert.Equal(0, expanded.Summary.Updated);
+
+        var partial = await Import(Zip(new[] { ("Order-Sheet-002.jpg", "revised-2") }));
+        Assert.Equal(1, partial.Summary.Updated);
+        foreach (var n in new[] { 1, 3, 4, 5 })
+        {
+            var image = new ImageTreeFile(Destination, "OrderSheet", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = n };
+            Assert.Equal($"photo-{n}", File.ReadAllText(image.FullName));
+        }
+    }
+
+    [Fact]
+    public async Task NoOverwriteRejectsWholeBatchBeforeWriting()
+    {
+        var first = await Import(Zip(new[] { ("Order-Sheet-001.jpg", "original") }));
+        var existing = Path.Combine(Destination.FullPath, first.Files[0].RelativePath!);
+        var incoming = Zip(new[] { ("Order-Sheet-001.jpg", "different"), ("Order-Sheet-002.jpg", "new") });
+        var result = await ImageImport.RunAsync(incoming, null, "Import001", null, Destination, "Customer", Limits,
+			cancellationToken: TestContext.Current.CancellationToken, noOverwrite: true);
+        Assert.Equal("Failed", result.Status);
+        Assert.Equal("original", File.ReadAllText(existing));
+        var added = new ImageTreeFile(Destination, "OrderSheet", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = 2 };
+        Assert.False(added.Exists());
     }
 
     [Fact]

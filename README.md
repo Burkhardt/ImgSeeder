@@ -40,9 +40,12 @@ ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `On
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
-## ZIP import and compact receipts (CR049 / CR054 / CR060)
+## ZIP import and compact receipts (CR049 / CR054 / CR060 / CR061)
 
 CR060 adds the `-s`, `-o`, and `-i` options described below.
+The upsert behavior and ReceiptVersion 3 described below are CR061 changes on
+`main` for the planned 4.5.10 release; the published 4.5.9 tool retains its
+earlier collision behavior.
 
 `iorg` inspects ZIP subdirectories for supported images, preserves the archive,
 and copies directly from its temporary extraction workspace into the ImageTree.
@@ -82,7 +85,12 @@ Target:         Customer/CustomerOr/CustomerOrderSheet26_010.jpg
 `Order_SHEET_001.jpg` becomes `OrderSheet_001.jpg`. Underscores do not remain in
 the normalized base stem. Earlier digits within descriptive words are preserved.
 ZIP folder names do not determine destination folders. A normalization collision
-rejects the batch before copying; different existing bytes are never overwritten.
+within the incoming batch rejects it before copying. By default, an existing
+image with identical bytes is left untouched; one with different bytes is
+rewritten in place and its managed derivatives for that image number are removed.
+Use `--no-overwrite` to reject a batch containing any changed existing image
+before writing source images. An interrupted in-place write can leave partial
+content; `iorg` verifies the resulting SHA-256 and reports a failure if it differs.
 
 **4.5.5 path compatibility:** Structured output now uses at least three digits
 (`_001`, `_010`, `_193`); Legacy retains two. Existing two-digit source names still
@@ -93,12 +101,12 @@ an old `_01` and new `_001` can coexist. D3 is a minimum width: numbers above 99
 are not truncated. Numbered diagram artifacts also use D3 consistently across `.raid`, `.puml`,
 and SVG siblings; migrate existing numbered diagram paths together.
 
-### ReceiptVersion 2
+### ReceiptVersion 3
 
 A clean homogeneous sequence produces one compact descriptor, not a per-file list:
 
 ```json
-{"Id":"Import_OrderPhotos","Class":"ImageImport","ReceiptVersion":2,"BaseItemId":"CustomerOrderSheet26","PathConvention":"ItemIdTree8x2","NamingConvention":"Structured","Range":{"Start":1,"End":193,"Count":193,"Ext":"jpg"},"ActivityId":"OrderPhotos","Tenant":"Customer","Source":{"Kind":"Zip","Name":"orders.zip"},"Summary":{"Copied":193,"Unchanged":0,"Skipped":0,"Failed":0}}
+{"Id":"Import_OrderPhotos","Class":"ImageImport","ReceiptVersion":3,"BaseItemId":"CustomerOrderSheet26","PathConvention":"ItemIdTree8x2","NamingConvention":"Structured","Range":{"Start":1,"End":193,"Count":193,"Ext":"jpg","Updated":0},"ActivityId":"OrderPhotos","Tenant":"Customer","Source":{"Kind":"Zip","Name":"orders.zip"},"Summary":{"Copied":193,"Updated":0,"Unchanged":0,"Skipped":0,"Failed":0}}
 ```
 
 The clean 193-image regression receipt is below 500 UTF-8 bytes before Pit history
@@ -107,7 +115,8 @@ arbitrary mixed archives cannot have a universal fixed byte bound.
 
 Mixed stems, extensions, or gaps produce deterministic contiguous `Ranges`.
 Each range carries `BaseItemId`, `PathConvention`, `NamingConvention`, `Start`,
-`End`, `Count`, and `Ext`. A single remaining range uses the top-level form.
+`End`, `Count`, `Ext`, and the number `Updated` in that range. A single
+remaining range uses the top-level form.
 Runs of only one image are represented in `Exceptions` with their actual copy
 status, just like skipped files and failures; a singleton is not itself a failed
 import. The 500-image/two-range regression receipt is below 1 KB.
@@ -131,7 +140,7 @@ Console.WriteLine(image.FullName);
 ```
 
 Use the receipt's convention values, not a custom padding or path pattern.
-Only successfully copied or unchanged images belong to ranges. Failed copies and
+Only successfully copied, updated, or unchanged images belong to ranges. Failed copies and
 skipped entries do not inflate a successful range. The receipt links to an
 activity with `ActivityId` and contains no top-level lifecycle `Status`.
 Activity lifecycle state remains in its own Pit. The library retains its
@@ -141,6 +150,10 @@ operational result in memory for CLI exit handling.
 `--out`, or `--receipt` also writes the receipt to the named file. Successful
 imports exit 0; preflight, copying, or cleanup failures exit 1. A runtime failure
 may leave successful copies; inspect `Summary`, `Exceptions`, and `Error`.
+If an updated source is verified but a derivative cannot be removed, its entry
+stays `Updated`, its cache error appears in `Exceptions`, and the operation
+reports `Partial` with a nonzero exit code. Derivatives for other images are
+left alone.
 An early argument error may produce stderr only. A local copy does not certify
 cloud synchronization. Keep receipts for retry if subsequent Pit ingestion fails.
 

@@ -17,7 +17,7 @@
     <RepositoryUrl>https://github.com/Burkhardt/ImgSeeder.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-      <PackageReleaseNotes>CR054: compact ReceiptVersion 2 ranges and sparse exceptions; explicit EXIF retains per-image details. Activity lifecycle state is not duplicated.</PackageReleaseNotes>
+      <PackageReleaseNotes>CR061: idempotent image imports update changed files in place, invalidate only their managed derivatives, and report ReceiptVersion 3 counts. Use --no-overwrite for conservative preflight.</PackageReleaseNotes>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

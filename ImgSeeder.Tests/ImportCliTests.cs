@@ -94,6 +94,31 @@ public sealed class ImportCliTests : IDisposable
         Assert.Contains("OrderSheet_026.jpg", run.StandardOutput);
     }
 
+	[Fact]
+	public void OrganizeNoOverwriteFlagRejectsChangedDestinationBeforeAddingNewImage()
+	{
+		Directory.CreateDirectory(root);
+		var firstZip = Path.Combine(root, "first.zip");
+		var changedZip = Path.Combine(root, "changed.zip");
+		using (var zip = ZipFile.Open(firstZip, ZipArchiveMode.Create))
+		using (var stream = zip.CreateEntry("Order-Sheet-001.jpg").Open()) stream.WriteByte(1);
+		using (var zip = ZipFile.Open(changedZip, ZipArchiveMode.Create))
+		{
+			using (var stream = zip.CreateEntry("Order-Sheet-001.jpg").Open()) stream.WriteByte(2);
+			using (var stream = zip.CreateEntry("Order-Sheet-002.jpg").Open()) stream.WriteByte(3);
+		}
+		var images = Path.Combine(root, "images");
+		var first = Run("organize", "--source", firstZip, "--root", images, "--tenant", "Customer", "--json");
+		Assert.Equal(0, first.ExitCode);
+		var guarded = Run("organize", "--source", changedZip, "--root", images, "--tenant", "Customer", "--no-overwrite", "--json");
+		Assert.Equal(1, guarded.ExitCode);
+		using var receipt = JsonDocument.Parse(guarded.StandardOutput);
+		Assert.Contains("Destination contains different content", receipt.RootElement.GetProperty("Error").GetString());
+		var item = new RaiImage.ItemTreePath(new RaiPath(Path.Combine(images, "Customer")), "OrderSheet");
+		Assert.Equal(new[] { "OrderSheet_001.jpg" }, item.SelectFiles().Select(file => file.NameWithExtension).ToArray());
+		Assert.Equal(1, File.ReadAllBytes(item.SelectFiles().Single().FullName)[0]);
+	}
+
     [Fact]
     public void ArgumentErrorsDoNotPolluteJsonStdout()
     {
