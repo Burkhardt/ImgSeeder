@@ -1,80 +1,17 @@
 # ImgSeeder
 
-## 4.5.8
+## Latest Version 4.5.8
 
-Coordinated 4.5.8 release; public behavior is aligned with the synchronized platform.
+Image organization, cloud-safe ZIP import, and compact import receipts.
 
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md).
-
-## 4.5.7
-
-Coordinated 4.5.7 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.7.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.7.md).
-
-## 4.5.6
-
-Coordinated 4.5.6 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.6.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.6.md).
-
-## 4.5.5
-
-Coordinated 4.5.5 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.5.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.5.md).
-
-## 4.5.4
-
-Coordinated 4.5.4 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.4.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.4.md).
+Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md).
 
 <details>
 <summary><b>Previous Versions</b></summary>
 
-### 4.5.3
-
-Coordinated 4.5.3 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.3.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.3.md).
-
-### 4.5.2
-
-Coordinated 4.5.2 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.2.md).
-
-### 4.5.0
-
-Coordinated 4.5.0 dependencies including JsonPit live references; iorg reports version 4.5.0.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.0.md).
+Earlier coordinated releases are recorded in the [RAIkeep release-note archive](https://github.com/Burkhardt/RAIkeep/tree/main/doc).
 
 </details>
-
-Coordinated 4.5.3 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.3.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.3.md).
-
-## 4.5.2
-
-Coordinated 4.5.2 release; public behavior is aligned with the synchronized platform.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.2.md).
-
-## 4.5.0
-
-Coordinated 4.5.0 dependencies including JsonPit live references; iorg reports version 4.5.0.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.5.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.0.md).
-
-## 4.4.8
-
-Coordinated 4.4.8 dependencies including JsonPit live references; iorg reports version 4.4.8.
-
-Release notes: [ImgSeeder_RELEASE_NOTES_4.4.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.8.md).
-
 
 ## Terminal font
 
@@ -316,142 +253,6 @@ The lower-level `ImageExif.ReadAsync` remains available for callers needing the
 original string dictionary. See [ImageMagick properties](https://imagemagick.org/escape/)
 and the [EXIF definitions](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf).
 
-## 4.4.5
-
-- Participates unchanged in the synchronized nine-package CR047 release and reports `iorg v4.4.5`.
-- Fallback package dependencies align to 4.4.5.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.4.5.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.5.md)
-
-## 4.4.4
-
-- Participates unchanged in the synchronized nine-package CR044 release and reports `iorg v4.4.4`.
-- Fallback package dependencies align to 4.4.4.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.4.4.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.4.md)
-
-## 4.4.2
-
-- Participates unchanged in the synchronized eight-package CR040/CR041 release and reports `iorg v4.4.2`.
-- Fallback package dependencies align to 4.4.2.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.4.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.2.md)
-
-## 4.4.1
-
-- Participates in synchronized RAIkeep v4.4.1 CR037/CR037.1 and reports `iorg v4.4.1`.
-- Misplaced reserved verbs fail before ImageTree access with exit code `2` and
-  an actionable verb-first correction; version flags take immediate precedence.
-- Fallback package dependencies align to 4.4.1.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.4.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.4.1.md)
-
-## 4.3.2
-
-- Participates unchanged in coordinated RAIkeep v4.3.2.
-- Aligns fallback package dependencies to 4.3.2 and reports `iorg v4.3.2`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.3.2.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.3.2.md)
-
-## 4.3.1
-
-- Participates unchanged in coordinated RAIkeep v4.3.1.
-- Aligns fallback package dependencies to 4.3.1 and reports `iorg v4.3.1`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.3.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.3.1.md)
-
-## 4.3.0
-
-- Participates unchanged in coordinated RAIkeep v4.3.0.
-- Aligns fallback package dependencies to 4.3.0 and reports `iorg v4.3.0`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.3.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.3.0.md)
-
-## 4.2.11 (superseded before publication)
-
-- This prepared line was not published; its coordinated changes are carried by v4.3.0.
-- Aligns fallback package dependencies to 4.2.11 and reports `iorg v4.2.11`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.11.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.11.md)
-
-## 4.2.10
-
-- Adds `-a, --app` for application-root addressing; iorg appends the conventional `Image` segment.
-- Adds preferred `-t, --tenant`; `--subscriber` remains a compatibility alias.
-- Keeps `-r, --root` as the exact ImageTree-root alternative. `--root` and `--app` are mutually exclusive, and app-root addressing requires a tenant.
-- Corrects root and contextual help alignment, documents the legacy unnamed subscriber only when it was actually used, and consistently shows `(-p|--pathconv)`.
-- Aligns fallback package dependencies to 4.2.10 and reports `iorg v4.2.10`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.10.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.10.md)
-
-## 4.2.9
-
-- Implements accepted incident corrective action CR022 by removing the TempDir subscriber staging tree.
-- `iorg` organization writes each image directly to its final ItemTree pathname through RaiFile; it never moves a staged temporary file into a CloudDrive.
-- The optional `tempRoot` API parameter remains source/binary compatible but is intentionally behaviorally inert.
-- Aligns all fallback package dependencies to 4.2.9 and reports `iorg v4.2.9`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.9.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.9.md)
-- Mandatory storage contract: [Cloud-Storage-In-Place-Invariant.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/Cloud-Storage-In-Place-Invariant.md)
-
-## 4.2.8
-
-- Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.8 release implementing accepted CR021.
-- Existing `iorg` behavior remains unchanged from 4.2.7.
-- Aligns all fallback package dependencies to 4.2.8 and reports `iorg v4.2.8`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.8.md)
-
-## 4.2.7
-
-- Implements accepted CR020 with read-only recursive `iorg list <FileNamePattern>` discovery across image, `.puml`, and `.raid` artifacts.
-- Adds exact-ItemId `iorg move <SourceItemId> [TargetItemId]` for relocation, rename, and path-convention migration without disturbing bucket siblings.
-- Adds `iorg clean --cache` for explicit derivative cleanup and makes `iorg clean <ItemId> --force` remove the complete item file family.
-- Removes the misleading Legacy row from root help; `-r` remains the supported short spelling of `--root`.
-- Aligns all fallback package dependencies to 4.2.7 and reports `iorg v4.2.7`.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.7.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.7.md)
-
-## 4.2.6
-
-- Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.6 release implementing accepted CR019.
-- Aligns fallback dependencies on `JsonPit 4.2.6`, `OsLibCore 4.2.6`, `RaiUtils 4.2.6`, and `RaiImage 4.2.6`; `iorg` behavior is unchanged.
-- Reports `iorg v4.2.6` through the CLI version boundary.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.6.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.6.md)
-
-## 4.2.5
-
-- Aligns ImgSeeder with the coordinated seven-package RAIkeep 4.2.5 release implementing accepted CR017.
-- Aligns fallback dependencies on `JsonPit 4.2.5`, `OsLibCore 4.2.5`, `RaiUtils 4.2.5`, and `RaiImage 4.2.5`; `iorg` behavior is unchanged.
-- Reports `iorg v4.2.5` through the CLI version boundary.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.5.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.5.md)
-
-## 4.2.4
-
-- Adopts RaiImage 4.2.4 so `iorg` destinations use accepted CR016 NFC normalization and Unicode text-element bucketing.
-- Aligns fallback dependencies on `JsonPit 4.2.4`, `OsLibCore 4.2.4`, `RaiUtils 4.2.4`, and `RaiImage 4.2.4`.
-- CLI behavior and the established Nerd Font help contract remain unchanged.
-- 4.2.4 release notes: [ImgSeeder_RELEASE_NOTES_4.2.4.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.4.md)
-
-## 4.2.3
-
-- Aligns fallback dependencies on `JsonPit 4.2.3`, `OsLibCore 4.2.3`, `RaiUtils 4.2.3`, and `RaiImage 4.2.3` for the coordinated CR015 release.
-- Retains the `4.2.1` Nerd Font glyphs, corrected option alignment, Blink guidance, and terminal clipping tolerance unchanged.
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.3.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.3.md)
-
-## 4.2.1
-
-- Uses glyphs embedded in `JetBrainsMonoNLNerdFontPropo-Regular` for cloud-provider and numbered help options, avoiding fallback-font width differences.
-- Aligns contextual option descriptions consistently and reserves two terminal cells at the end of help lines for renderers such as Blink.
-- Continues to depend on `JsonPit 4.2.0`, `OsLibCore 4.2.0`, `RaiUtils 4.2.0`, and `RaiImage 4.2.0`; no library package version changes are part of this CLI-only patch.
-- Terminal setup guidance: [TERMINAL_FONTS.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/TERMINAL_FONTS.md)
-- Current release notes: [ImgSeeder_RELEASE_NOTES_4.2.1.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.1.md)
-
-## 4.2.0
-
-- Retains the command-first `organize` and `clean` syntax introduced for CR006.
-- Keeps established flat `iorg` invocations working throughout `4.x`; the legacy parser is scheduled for removal in `5.x.x`.
-- Fallback package defaults are aligned on `JsonPit 4.2.0`, `OsLibCore 4.2.0`, `RaiUtils 4.2.0`, and `RaiImage 4.2.0`.
-- No ImgSeeder CLI behavior changes from 4.1.0.
-- Help is contextual per command and startup banners use decorative glyph rules instead of repeated equals signs.
-- Release notes: [ImgSeeder_RELEASE_NOTES_4.2.0.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.2.0.md)
-
-This tool is part of the RAIkeep package family:
-
-- `OsLibCore`
-- `RaiUtils`
-- `RaiImage`
-- `JsonPit`
-- `ImgSeeder` (`iorg` command)
-- `PitSeeder`
 
 ## Installation
 
@@ -615,9 +416,6 @@ Tagged releases also publish self-contained `iorg` workflow artifacts for:
 
 These binaries can be deployed without a separate .NET runtime installation.
 
-## release notes
-
-- Latest release notes: [ImgSeeder_RELEASE_NOTES_4.5.8.md](https://github.com/Burkhardt/RAIkeep/blob/main/doc/ImgSeeder_RELEASE_NOTES_4.5.8.md)
 
 ## Validation
 
