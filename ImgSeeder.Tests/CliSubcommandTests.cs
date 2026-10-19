@@ -577,7 +577,7 @@ public sealed class CliSubcommandTests : IDisposable
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.5.11", run.output.Trim());
+		Assert.Equal("iorg v4.5.12", run.output.Trim());
 	}
 
 	[Fact]
@@ -599,7 +599,7 @@ public sealed class CliSubcommandTests : IDisposable
 		var run = RunIorg(args);
 
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.5.11", run.output.Trim());
+		Assert.Equal("iorg v4.5.12", run.output.Trim());
 		Assert.Empty(run.error);
 	}
 

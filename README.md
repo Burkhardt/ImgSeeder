@@ -1,10 +1,10 @@
 # ImgSeeder
 
-## Latest Version 4.5.11
+## Latest Version 4.5.12
 
 Image organization, cloud-safe ZIP import, and compact import receipts.
 
-Latest release notes: [ImgSeeder 4.5.11 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4511).
+Latest release notes: [ImgSeeder 4.5.12 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4512).
 
 ## Previous Versions
 
