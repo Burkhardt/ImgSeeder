@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ImgSeeder;
@@ -152,6 +153,90 @@ public sealed class ImageImportTests : IDisposable
         Assert.Equal(1, second.Summary.Updated);
         Assert.Equal(0, second.Summary.Copied);
         Assert.Equal("second", File.ReadAllText(target));
+    }
+
+    [Fact]
+    public async Task SingleVideoFileCopiesThenReportsUnchangedAndUpdated()
+    {
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, "Server-Clip-001.mp4");
+        await File.WriteAllTextAsync(source, "first", TestContext.Current.CancellationToken);
+
+        var first = await ImageImport.RunAsync(source, null, "Import001", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken, itemTreePrefix: "SampleApp/Image/Customer");
+        Assert.Equal("Completed", first.Status);
+        Assert.Equal("File", first.Source.Kind);
+        Assert.Equal(1, first.Summary.Copied);
+        var row = Assert.Single(first.Files);
+        Assert.Equal("mp4", row.Ext);
+        Assert.Equal(5, row.SizeBytes);
+        Assert.Equal("SampleApp/Image/Customer/ServerCl/ServerClip/ServerClip_001.mp4", row.ItemTreePath);
+        var destination = Path.Combine(Destination.FullPath, row.RelativePath!);
+        Assert.True(File.Exists(destination));
+
+        var unchanged = await ImageImport.RunAsync(source, null, "Import002", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1, unchanged.Summary.Unchanged);
+
+        await File.WriteAllTextAsync(source, "second", TestContext.Current.CancellationToken);
+        var updated = await ImageImport.RunAsync(source, null, "Import003", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1, updated.Summary.Updated);
+        Assert.Equal("second", await File.ReadAllTextAsync(destination, TestContext.Current.CancellationToken));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(updated));
+        var file = json.RootElement.GetProperty("Files")[0];
+        Assert.Equal("mp4", file.GetProperty("Ext").GetString());
+        Assert.Equal("Updated", file.GetProperty("Status").GetString());
+        Assert.Equal(6, file.GetProperty("SizeBytes").GetInt64());
+        Assert.EndsWith("ServerClip_001.mp4", file.GetProperty("ItemTreePath").GetString());
+    }
+
+    [Fact]
+    public async Task MoveDeletesSingleScratchFileOnlyAfterVerifiedCopy()
+    {
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, "Server-Clip-002.mov");
+        await File.WriteAllTextAsync(source, "video bytes", TestContext.Current.CancellationToken);
+        var expectedHash = SHA256.HashData(await File.ReadAllBytesAsync(source, TestContext.Current.CancellationToken));
+
+        var receipt = await ImageImport.RunAsync(source, null, "Import001", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken, moveSource: true);
+
+        Assert.Equal("Completed", receipt.Status);
+        Assert.Equal(1, receipt.Summary.Copied);
+        Assert.False(File.Exists(source));
+        var target = Path.Combine(Destination.FullPath, Assert.Single(receipt.Files).RelativePath!);
+        Assert.Equal(expectedHash, SHA256.HashData(await File.ReadAllBytesAsync(target, TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public async Task FailedGuardedUpdateRetainsScratchSource()
+    {
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, "Server-Clip-003.mp4");
+        await File.WriteAllTextAsync(source, "original", TestContext.Current.CancellationToken);
+        var first = await ImageImport.RunAsync(source, null, "Import001", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("Completed", first.Status);
+        await File.WriteAllTextAsync(source, "replacement", TestContext.Current.CancellationToken);
+
+        var guarded = await ImageImport.RunAsync(source, null, "Import002", null, Destination, "Customer", Limits,
+            cancellationToken: TestContext.Current.CancellationToken, noOverwrite: true, moveSource: true);
+
+        Assert.Equal("Failed", guarded.Status);
+        Assert.True(File.Exists(source));
+        Assert.Equal("original", await File.ReadAllTextAsync(
+            Path.Combine(Destination.FullPath, first.Files.Single().RelativePath!), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task MixedArchiveImportsStillImageAndVideo()
+    {
+        var receipt = await Import(Zip(new[] { ("Order-Sheet-001.jpg", "still"), ("Server-Clip-001.webm", "video") }));
+        Assert.Equal("Completed", receipt.Status);
+        Assert.Equal(2, receipt.Summary.Copied);
+        Assert.Equal(new[] { "jpg", "webm" }, receipt.Files.Select(file => file.Ext).OrderBy(ext => ext).ToArray());
+        Assert.All(receipt.Files, file => Assert.True(File.Exists(Path.Combine(Destination.FullPath, file.RelativePath!))));
     }
 
     [Fact]

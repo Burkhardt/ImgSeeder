@@ -49,6 +49,51 @@ public sealed class ImportCliTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(root, "images")));
     }
 
+    [Fact]
+    public void SingleVideoFileWritesMachineCleanReceiptAndCanMoveScratchSource()
+    {
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, "Server-Clip-001.mp4");
+        File.WriteAllText(source, "video bytes");
+        var images = Path.Combine(root, "images");
+
+        var run = Run("organize", "--source", source, "--root", images,
+            "--tenant", "Customer", "--move", "--json");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.False(File.Exists(source));
+        using var receipt = JsonDocument.Parse(run.StandardOutput);
+        Assert.Equal(3, receipt.RootElement.GetProperty("ReceiptVersion").GetInt32());
+        Assert.Equal(1, receipt.RootElement.GetProperty("Summary").GetProperty("Copied").GetInt32());
+		Assert.False(receipt.RootElement.TryGetProperty("Exceptions", out _));
+        var entry = receipt.RootElement.GetProperty("Files")[0];
+        Assert.Equal("mp4", entry.GetProperty("Ext").GetString());
+		Assert.Equal("Customer/ServerCl/ServerClip/ServerClip_001.mp4", entry.GetProperty("ItemTreePath").GetString());
+        Assert.Equal(11, entry.GetProperty("SizeBytes").GetInt64());
+        Assert.Equal("Copied", entry.GetProperty("Status").GetString());
+        var listed = Run("list", "*.mp4", "--root", images, "--tenant", "Customer", "--json");
+        Assert.Equal(0, listed.ExitCode);
+        Assert.Equal("ServerClip_001.mp4", JsonDocument.Parse(listed.StandardOutput).RootElement[0].GetString());
+    }
+
+    [Fact]
+    public void MoveRejectsArchiveAndPreservesSource()
+    {
+        Directory.CreateDirectory(root);
+        var zipPath = Path.Combine(root, "archive.zip");
+        using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        using (var stream = zip.CreateEntry("Server-Clip-001.mp4").Open()) stream.WriteByte(1);
+
+        var run = Run("organize", "--source", zipPath, "--root", Path.Combine(root, "images"),
+            "--tenant", "Customer", "--move", "--json");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Empty(run.StandardOutput);
+        Assert.Contains("--move is only supported for single-file sources", run.StandardError);
+        Assert.True(File.Exists(zipPath));
+        Assert.False(Directory.Exists(Path.Combine(root, "images")));
+    }
+
     [Theory]
     [InlineData("-o")]
     [InlineData("--out")]

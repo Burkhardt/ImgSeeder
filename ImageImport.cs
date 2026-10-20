@@ -31,6 +31,8 @@ public sealed class ImageImportReceipt
 	public ImageNamingConvention NamingMode { get; init; } = ImageNamingConvention.Structured;
 	[JsonIgnore]
 	public bool IncludeExif { get; init; }
+	[JsonIgnore]
+	public bool IncludeFiles { get; init; }
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? PathConvention => Range is null ? null : PathMode.ToString();
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -57,7 +59,7 @@ public sealed class ImageImportReceipt
 	public List<ImageImportEntry> Files { get; } = [];
 	[JsonPropertyName("Files")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<ImageImportEntry>? DetailedFiles => IncludeExif ? Files : null;
+	public IReadOnlyList<ImageImportEntry>? DetailedFiles => IncludeExif || IncludeFiles ? Files : null;
 
 	internal void Compact()
 	{
@@ -77,8 +79,11 @@ public sealed class ImageImportReceipt
 						entries[start..(end + 1)].Count(entry => entry.Status == "Updated")));
 				else
 				{
-					entries[start].Reason ??= "Singleton image outside a contiguous range.";
-					if (!exceptions.Contains(entries[start])) exceptions.Add(entries[start]);
+					if (!IncludeFiles)
+					{
+						entries[start].Reason ??= "Singleton image outside a contiguous range.";
+						if (!exceptions.Contains(entries[start])) exceptions.Add(entries[start]);
+					}
 				}
 				start = end + 1;
 			}
@@ -102,7 +107,7 @@ public sealed record ImageImportSummary(int Copied, int Updated, int Unchanged, 
 public sealed class ImageImportEntry
 {
 	public required string SourceEntry { get; init; }
-	[JsonIgnore]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Ext { get; internal set; }
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? ItemId { get; internal set; }
@@ -110,6 +115,10 @@ public sealed class ImageImportEntry
 	public int? ImageNumber { get; internal set; }
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? RelativePath { get; internal set; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ItemTreePath { get; internal set; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public long? SizeBytes { get; internal set; }
 	public string Status { get; internal set; } = "Pending";
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; internal set; }
@@ -123,7 +132,7 @@ public sealed class ImageImportEntry
 public static class ImageImport
 {
 	private sealed record Candidate(ImageImportEntry Entry, ImageTreeFile Destination, Func<Stream> Open, long Length, byte[] Hash);
-	private static readonly HashSet<string> Extensions = ImageTypes.Default.Array
+	private static readonly HashSet<string> Extensions = RaiImage.MediaTypes.Default.Array
 		.Select(e => "." + e.Trim().TrimStart('.')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 	public static Task<ImageImportReceipt> RunAsync(
@@ -132,17 +141,19 @@ public static class ImageImport
 		PathConventionType pathConvention = PathConventionType.ItemIdTree8x2,
 		ImageNamingConvention namingConvention = ImageNamingConvention.Structured,
 		HttpClient? downloadClient = null, CancellationToken cancellationToken = default, string? exif = null,
-		bool noOverwrite = false)
+		bool noOverwrite = false, bool moveSource = false, string? itemTreePrefix = null)
 		// Archive metadata inspection and filename parsing are synchronous work too.
 		// Dispatch the complete operation so a UI caller can safely await this API.
 		=> Task.Run(() => RunCoreAsync(source, sourceUrl, importId, activityId, destination,
-			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif, noOverwrite), cancellationToken);
+			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif, noOverwrite,
+			moveSource, itemTreePrefix), cancellationToken);
 
 	private static async Task<ImageImportReceipt> RunCoreAsync(
 		string? source, Uri? sourceUrl, string? importId, string? activityId,
 		RaiPath destination, string tenant, ImageImportLimits limits,
 		PathConventionType pathConvention, ImageNamingConvention namingConvention,
-		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif, bool noOverwrite)
+		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif, bool noOverwrite,
+		bool moveSource, string? itemTreePrefix)
 	{
 		if (importId is not null) PitItem.ValidateLiveId(importId);
 		if (activityId is not null) PitItem.ValidateLiveId(activityId);
@@ -151,11 +162,16 @@ public static class ImageImport
 		if ((source is null) == (sourceUrl is null)) throw new ArgumentException("Specify exactly one of --source or --source-url.");
 		if (sourceUrl is not null) ValidateUrl(sourceUrl);
 		var zipInput = sourceUrl is not null || string.Equals(System.IO.Path.GetExtension(source), ".zip", StringComparison.OrdinalIgnoreCase);
+		var singleFile = !zipInput && source is not null && new RaiFile(source).Exists();
+		if (moveSource && !singleFile)
+			throw new ArgumentException("--move is only supported for single-file sources; directory and archive sources cannot be deleted.");
+		itemTreePrefix ??= tenant;
 		var receipt = new ImageImportReceipt
 		{
 			Id = importId, ActivityId = activityId, Tenant = tenant,
 			PathMode = pathConvention, NamingMode = namingConvention, IncludeExif = exif is not null,
-			Source = new(zipInput ? "Zip" : "Directory", sourceUrl is null
+			IncludeFiles = singleFile,
+			Source = new(zipInput ? "Zip" : singleFile ? "File" : "Directory", sourceUrl is null
 				? System.IO.Path.GetFileName(source!.TrimEnd('/', '\\'))
 				: System.IO.Path.GetFileName(sourceUrl.AbsolutePath))
 		};
@@ -225,18 +241,18 @@ public static class ImageImport
 					if (entry.FullName.EndsWith('/') || !Extensions.Contains(System.IO.Path.GetExtension(entry.Name)) || entry.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) || entry.Name.StartsWith("._", StringComparison.Ordinal))
 					{
 						row.Status = "Skipped";
-						row.Reason = "Directory, metadata, or unsupported image type.";
+						row.Reason = "Directory, metadata, or unsupported media type.";
 						continue;
 					}
-					plan.Add(await PlanAsync(row, staged, entry.Length, destination, pathConvention, namingConvention, cancellationToken, exif));
+					plan.Add(await PlanAsync(row, staged, entry.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix));
 				}
 				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
 			}
 			else
 			{
 				var root = new RaiPath(source!);
-				if (!root.Exists()) throw new ArgumentException("Source directory does not exist.");
-				var files = root.EnumerateFiles("*").OrderBy(f => f.NameWithExtension, StringComparer.Ordinal).ToList();
+				if (!singleFile && !root.Exists()) throw new ArgumentException("Source file or directory does not exist.");
+				List<RaiFile> files = singleFile ? [new RaiFile(source!)] : root.EnumerateFiles("*").OrderBy(f => f.NameWithExtension, StringComparer.Ordinal).ToList();
 				if (files.Count > limits.MaxEntries) throw new InvalidDataException("Source exceeds --max-entries.");
 				var plan = new List<Candidate>();
 				long expanded = 0;
@@ -246,14 +262,25 @@ public static class ImageImport
 					receipt.Files.Add(row);
 					if (!Extensions.Contains("." + file.Ext.TrimStart('.')))
 					{
-						row.Status = "Skipped"; row.Reason = "Unsupported image type."; continue;
+						row.Status = "Skipped"; row.Reason = "Unsupported media type."; continue;
 					}
 					using var input = file.OpenRead();
 					if (input.Length > limits.MaxExpandedBytes - expanded) throw new InvalidDataException("Source exceeds --max-expanded-bytes.");
 					expanded += input.Length;
-					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif));
+					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix));
 				}
+				if (moveSource && plan.Count == 1 && System.IO.Path.GetFullPath(source!) == plan[0].Destination.FullName)
+					throw new InvalidDataException("--move source and destination are the same file.");
 				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
+				if (moveSource && receipt.Status == "Completed" && plan.Count == 1)
+				{
+				try { new RaiFile(source!).rm(); }
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{
+					receipt.Status = "Partial";
+					receipt.Error = "Destination verified, but source cleanup failed: " + ex.Message;
+				}
+				}
 			}
 		}
 		catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException or ArgumentException or UnauthorizedAccessException or HttpRequestException or OperationCanceledException or OverflowException or InvalidOperationException or System.Text.Json.JsonException)
@@ -284,7 +311,8 @@ public static class ImageImport
 	}
 
 	private static async Task<Candidate> PlanAsync(ImageImportEntry row, RaiFile source, long length,
-		RaiPath root, PathConventionType pathConvention, ImageNamingConvention namingConvention, CancellationToken ct, string? exif)
+		RaiPath root, PathConventionType pathConvention, ImageNamingConvention namingConvention, CancellationToken ct, string? exif,
+		string itemTreePrefix)
 	{
 		// Inspect before EasyFileName can erase a template marker.
 		PitItem.ValidateLiveId(source.Name);
@@ -295,10 +323,13 @@ public static class ImageImport
 		row.ItemId = normalized.ItemId;
 		row.Ext = normalized.Ext;
 		row.ImageNumber = normalized.ImageNumber;
+		row.SizeBytes = length;
 		row.RelativePath = System.IO.Path.GetRelativePath(root.FullPath, target.FullName).Replace('\\', '/');
 		if (row.RelativePath.StartsWith("../", StringComparison.Ordinal) || System.IO.Path.IsPathRooted(row.RelativePath))
 			throw new InvalidDataException("Image destination is outside the tenant root.");
-		if (exif is not null) row.Exif = await ImageExif.ReadMetadataAsync(source, exif, ct);
+		var prefix = itemTreePrefix.Trim('/');
+		row.ItemTreePath = prefix.Length == 0 ? row.RelativePath : prefix + "/" + row.RelativePath;
+		if (exif is not null && !RaiImage.MediaTypes.IsVideo(normalized.Ext)) row.Exif = await ImageExif.ReadMetadataAsync(source, exif, ct);
 		using var input = new LimitedReadStream(source.OpenRead(), length);
 		var hash = await SHA256.HashDataAsync(input, ct);
 		return new Candidate(row, target, source.OpenRead, length, hash);

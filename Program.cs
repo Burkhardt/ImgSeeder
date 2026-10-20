@@ -618,7 +618,8 @@ public static class ImageOrganizer
 		if (ext.Equals("puml", StringComparison.OrdinalIgnoreCase)
 			|| ext.Equals("raid", StringComparison.OrdinalIgnoreCase))
 			return true;
-		return DeleteExtensions().Contains(ext);
+		return RaiImage.MediaTypes.Default.Array.Contains(ext, StringComparer.OrdinalIgnoreCase)
+			|| DeleteExtensions().Contains(ext);
 	}
 
 	private static bool IsRenderedDerivative(RaiFile file)
@@ -922,7 +923,7 @@ internal static class Program
 		var valueOptions = CommandGlobalValueOptions
 			.Concat(["-s", "--source", "--source-url", "-o", "--out", "--receipt", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--no-overwrite"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--no-overwrite", "--move", "--delete-source"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count > 1)
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
@@ -961,8 +962,23 @@ internal static class Program
 		if (seconds > 4_294_967) throw new ArgumentException("--download-timeout-seconds exceeds the supported timer range.");
 		var limits = new ImageImportLimits(OptionalPositiveLimit(args, "--max-archive-bytes"), OptionalPositiveLimit(args, "--max-expanded-bytes"),
 			(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
-		var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), ResolveCommandSubscriberRoot(rootBinding),
-			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif, noOverwrite: HasOption(args, "--no-overwrite")).GetAwaiter().GetResult();
+		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
+		RaiPath itemTreeBase;
+		var selectedProvider = EffectiveCloudProvider(Messages.CloudProvider, root.Value,
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		if (selectedProvider is not null)
+		{
+			string? cloudDirectory = Os.Config?.Cloud?[selectedProvider];
+			itemTreeBase = new RaiPath(cloudDirectory ?? throw new ArgumentException("The selected cloud root is not configured."));
+		}
+		else itemTreeBase = new RaiPath(root.Value);
+		var pathPrefix = Path.GetRelativePath(itemTreeBase.FullPath, subscriberRoot.FullPath).Replace('\\', '/');
+		if (pathPrefix.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(pathPrefix))
+			throw new ArgumentException("The destination is outside the selected ItemTree root.");
+		if (pathPrefix == ".") pathPrefix = string.Empty;
+		var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), subscriberRoot,
+			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif, noOverwrite: HasOption(args, "--no-overwrite"),
+			moveSource: HasOption(args, "--move", "--delete-source"), itemTreePrefix: pathPrefix).GetAwaiter().GetResult();
 		var receiptJson = JsonSerializer.Serialize(receipt);
 		if (receiptPath is not null)
 		{
@@ -1277,13 +1293,13 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
+				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--move] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
 			{
 				"Usage: iorg list <FileNamePattern> [-i|--image <nr>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
-				"List is strictly read-only and includes image, .puml, and .raid artifacts. --exif selects image metadata."
+				$"List is strictly read-only and includes media, .puml, and .raid artifacts. Supported media: {RaiImage.MediaTypes.Default.String}. --exif selects still-image metadata."
 			},
 			"move" => new[]
 			{
@@ -1315,11 +1331,12 @@ internal static class Program
 			WriteCommandHelpOption("-i|--image:", "select one positive image number and its derivatives");
 		if (command == "organize")
 		{
-			WriteCommandHelpOption("-s|--source:", "source directory or ZIP archive; --source-url accepts a direct HTTPS ZIP URL");
+			WriteCommandHelpOption("-s|--source:", $"single media file, source directory, or ZIP archive; supported: {RaiImage.MediaTypes.Default.String}; --source-url accepts HTTPS ZIP");
 			WriteCommandHelpOption("-o|--out:", "write receipt JSON to a file; --receipt is an alias");
 			WriteCommandHelpOption("--import-id:", "optional receipt Id; generated for JSON output when omitted; --activity-id associates an Activity");
 			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
 			WriteCommandHelpOption("--no-overwrite:", "reject differing existing images before writing any source image; default is verified in-place update");
+			WriteCommandHelpOption("--move:", "for one local source file, delete it only after verified ingestion; --delete-source is an alias");
 			Messages.WriteInfo("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
 		}
 
