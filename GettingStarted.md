@@ -1,9 +1,10 @@
 # Getting Started with ImgSeeder (`iorg`)
 
-`iorg` is the RAIkeep command-line tool for organizing, validating, and managing images within an **ImageTree**.
+`iorg` is the RAIkeep command-line tool for organizing, validating, and managing images and video containers within an **ImageTree**.
 
-This guide covers ImgSeeder 4.5.12, including CR060 filename handling and
-CR061 idempotent image imports.
+This guide covers ImgSeeder 4.5.13, including CR060 filename handling,
+CR061 idempotent imports, and CR067 single-file media ingestion (`mp4`, `mov`,
+`webm`, `mkv`, and `avi`) with optional verified scratch-file cleanup.
 
 This guide walks through setting up cloud storage integration, installing the tools, performing bulk imports from a ZIP archive, and managing/cleaning images (e.g. for the sample order-sheet photo archive).
 
@@ -61,6 +62,25 @@ iorg -c OneDrive -a SampleApp -h
 ```
 
 `iorg` displays the resolved base path where the image tree resides (e.g. `~/.CloudStorage/OneDrive/SampleApp/Image`).
+
+## Ingest one video from scratch storage
+
+After a media encoder has completed successfully, hand its output file to
+`iorg`. The `--move` option deletes that one source file only after the
+destination has passed SHA-256 verification. An archive or directory cannot
+be used with `--move`.
+
+```bash
+iorg organize --source /tmp/Server-Clip-001.mp4 \
+  --cloud OneDrive --app SampleApp --subscriber Customer \
+  --move --json |
+  jq '.Files[0] | {ItemId, Ext, Status, SizeBytes, ItemTreePath}'
+```
+
+The `ItemTreePath` is relative to the configured cloud root, so callers can
+use it without calculating the `ItemIdTree8x2` directories. `--json` alone
+writes the receipt to stdout; `-o` is optional. A repeat import with identical
+bytes reports `Unchanged`, while changed bytes report `Updated`.
 
 ---
 

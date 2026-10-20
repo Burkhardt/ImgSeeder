@@ -1,10 +1,11 @@
 # ImgSeeder
 
-## Latest Version 4.5.12
+## Latest Version 4.5.13
 
-Image organization, cloud-safe ZIP import, and compact import receipts.
+Image and video organization, single-file imports, verified scratch cleanup,
+cloud-safe ZIP import, and compact batch receipts.
 
-Latest release notes: [ImgSeeder 4.5.12 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4512).
+Latest release notes: [ImgSeeder 4.5.13 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4513).
 
 ## Previous Versions
 
@@ -23,7 +24,7 @@ For release notes and changelogs of earlier releases, see the [ImgSeeder 4.x Rel
 
 ImgSeeder change requests and release notes are centralized in the RAIkeep [`doc/`](https://github.com/Burkhardt/RAIkeep/tree/main/doc) directory under `ImgSeeder_...` filenames; they are not stored separately in this child repository.
 
-ImgSeeder organizes images and related ItemTree artifacts across local or
+ImgSeeder organizes images, video containers, and related ItemTree artifacts across local or
 configured cloud-backed roots while preserving RAIkeep's cloud-safe in-place
 filesystem contract.
 
@@ -37,6 +38,30 @@ The NuGet tool package includes the Burkhardt `HardCastle.png` package icon, mat
 ImgSeeder uses the shared RAIkeep configured cloud-root contract: `Dropbox`, `OneDrive`, `GoogleDrive`, and `ICloudDrive`.
 
 `ImgSeeder` is the RAIkeep image organizer package. It installs the `iorg` CLI, which copies source images, normalizes filenames with RaiImage naming rules, and places the final files into an `ImageTreeFile` directory layout such as `ItemIdTree8x2`.
+
+### Single-file video ingestion (CR067)
+
+`iorg organize` accepts one media file, a directory, or a ZIP archive. Supported
+containers include `jpg`, `png`, `tiff`, `psd`, `webp`, `svg`, `mp4`, `mov`,
+`webm`, `mkv`, and `avi`. The source bytes are streamed into the same ImageTree
+layout used for still images; `iorg` does not transcode video.
+
+```bash
+iorg organize --source /tmp/Server-Clip-001.mp4 \
+  --cloud OneDrive --app SampleApp --subscriber Customer \
+  --move --json |
+  jq '{ReceiptVersion, Summary, Files: [.Files[] | {ItemId, Ext, Status, SizeBytes, ItemTreePath}]}'
+```
+
+For a single file, the JSON receipt includes `Files` with the canonical path
+relative to the configured cloud root. Without `-o`, `--json` writes the receipt
+to stdout and diagnostics to stderr. Identical destination bytes produce
+`Unchanged`; changed bytes produce a verified in-place `Updated` result. `--move`
+(`--delete-source`) removes the source only after verified ingestion and is
+accepted only with a single local file, never a directory or ZIP archive.
+For a local `--root`, `ItemTreePath` is relative to that supplied root.
+ZIP and directory imports retain compact range receipts unless `--exif` is
+explicitly requested.
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
