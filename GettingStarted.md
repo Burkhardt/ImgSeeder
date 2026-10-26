@@ -2,7 +2,7 @@
 
 `iorg` is the RAIkeep command-line tool for organizing, validating, and managing images and video containers within an **ImageTree**.
 
-This guide covers ImgSeeder 4.5.13, including CR060 filename handling,
+This guide covers ImgSeeder 4.5.14, including CR060 filename handling,
 CR061 idempotent imports, and CR067 single-file media ingestion (`mp4`, `mov`,
 `webm`, `mkv`, and `avi`) with optional verified scratch-file cleanup.
 
