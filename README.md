@@ -1,11 +1,11 @@
 # ImgSeeder
 
-## Latest Version 4.5.14
+## Latest Version 4.5.15
 
-Image and video organization, single-file imports, verified scratch cleanup,
-cloud-safe ZIP import, and compact batch receipts.
+Help now follows the shared CLI theme with aligned columns, syntax colors,
+provider badges, and a versioned heading. Import and receipt behavior is unchanged.
 
-Latest release notes: [ImgSeeder 4.5.14 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4514).
+Latest release notes: [ImgSeeder 4.5.15 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4515).
 
 ## Previous Versions
 

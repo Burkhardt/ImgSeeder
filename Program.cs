@@ -58,40 +58,43 @@ public static class Messages
 	public static PathConventionType PathConvention { get; set; } = DefaultPathConvention;
 	public static ImageNamingConvention NamingConvention { get; set; } = DefaultNamingConvention;
 
-	public static string[] Help
+	public static string[] Help => FormatHelp();
+	internal static string[] FormatHelp(bool useColor = false)
 	{
-		get
-		{
-			var lines = new List<string>
-			{
-				HelpLine("Commands", Icons.Info, "organize, list, move, clean"),
-				"  iorg organize ((-s|--source) <dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-o|--out <file>] [--import-id <id>]",
-				"  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--json|--quiet]",
-				"  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]",
-				"  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--force]",
-				"  iorg clean --cache ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>]",
-				HelpLine("-h, --help", Icons.Help, "print out all options"),
-				HelpLine("-v, --version", Icons.Info, "print version info"),
-				HelpLine("-l, --nologo", BannerIcon(), "do not display the banner"),
-				HelpLine("-d, --debug", DebugIcon(), Debug ? "TRUE" : "FALSE"),
-				HelpLine("-c, --cloud", CloudIcon(), CloudDescription()),
-				HelpLine("-s, --source", Icons.Folder, SourceDescription()),
-				HelpLine("-rm, --rm", Icons.File, "list images that would be deleted for ShortName"),
-				HelpLine("-rmc, --rm-cache", Icons.File, "list cached images that would be deleted for ShortName"),
-				HelpLine("--force", Icons.Force, "perform exact-ItemId deletion (or legacy -rm/-rmc)"),
-				HelpLine("-p, --pathconv", SelectedOptionIcon(PathConvention), PathConventionDescription()),
-				HelpLine("-n, --nameconv", SelectedOptionIcon(NamingConvention), NamingConventionDescription()),
-			};
-
-			if (SourceRoot != null)
-				lines.Add($"{Icons.Info} SourceImages\t{Icons.Folder}\t{SourceImageDescription()}");
-
-			lines.Add(HelpLine("-r, --root", Icons.Folder, RootDescription()));
-			lines.Add(HelpLine("-a, --app", Icons.Folder, AppDescription()));
-			lines.Add(HelpLine("-t, --tenant", Icons.Folder, SubscriberDescription()));
-			lines.Add($"ImageRoot: {ImageRootDescription()}");
-			return lines.ToArray();
-		}
+		CliHelpStyle.Row[] rows =
+		[
+			new("Commands:", Icons.Info.ToString(), "organize, list, move, clean"),
+			new("  iorg organize ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-o|--out <file>] [--json]", "", ""),
+			new("  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--json|--quiet]", "", ""),
+			new("  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]", "", ""),
+			new("  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--force]", "", ""),
+			new("  iorg clean --cache ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>]", "", ""),
+			new("Options:", "", ""),
+			new("-h, --help", Icons.Help.ToString(), "print out all options"),
+			new("-v, --version", Icons.Info.ToString(), "print version info"),
+			new("-l, --nologo", BannerIcon().ToString(), "do not display the banner"),
+			new("-d, --debug", DebugIcon().ToString(), "enable debug output"),
+			new("-c, --cloud", Icons.Folder.ToString(), CloudDescription(), CloudProviderOptions(), CloudProviderOptions().FirstOrDefault()),
+			new("-s, --source", Icons.Folder.ToString(), SourceDescription()),
+			new("--source-url", Icons.File.ToString(), "HTTPS ZIP archive source"),
+			new("-o, --out", Icons.File.ToString(), "receipt JSON file; --receipt is an alias"),
+			new("--json", Icons.Info.ToString(), "write the ImageImport receipt to stdout"),
+			new("--exif", Icons.Info.ToString(), "select '*' or comma-separated EXIF tags/patterns"),
+			new("--move", Icons.File.ToString(), "delete a single source file only after verified ingestion"),
+			new("--no-overwrite", Icons.Info.ToString(), "reject differing existing media before writing"),
+			new("--force", Icons.Force.ToString(), "perform exact-ItemId deletion"),
+			new("-p, --pathconv", SelectedOptionIcon(PathConvention), PathConventionDescription()),
+			new("-n, --nameconv", SelectedOptionIcon(NamingConvention), NamingConventionDescription()),
+			new("-r, --root", Icons.Folder.ToString(), RootDescription()),
+			new("-a, --app", Icons.Folder.ToString(), AppDescription()),
+			new("-t, --tenant", Icons.Folder.ToString(), SubscriberDescription()),
+			new("ImageRoot", Icons.Folder.ToString(), ImageRootDescription())
+		];
+		var result = CliHelpStyle.Rows(rows, useColor).ToList();
+		if (SourceRoot != null)
+			result.Add(CliHelpStyle.FormatRow(new("SourceImages", Icons.Folder.ToString(), SourceImageDescription()),
+				rows.Where(row => row.Icon.Length > 0).Max(row => row.Label.Length), useColor));
+		return result.ToArray();
 	}
 
 	internal static string CloudDescription()
@@ -109,20 +112,8 @@ public static class Messages
 	internal static string NamingConventionDescription()
 		=> NumberedOptions(Enum.GetNames<ImageNamingConvention>(), DefaultNamingConvention.ToString());
 
-	private static string HelpLine(string option, object icon, string description)
-	{
-		return $"{option.PadRight(24)}\t{icon}\t{description}";
-	}
-
 	private static char BannerIcon() => Banner ? Icons.Banner : Icons.NoBanner;
 	private static char DebugIcon() => Debug ? Icons.Bug : Icons.Runner;
-	private static string CloudIcon()
-	{
-		var options = CloudProviderOptions();
-		var provider = options.FirstOrDefault(option =>
-			string.Equals(option, CloudProvider, StringComparison.OrdinalIgnoreCase));
-		return provider != null ? CloudProviderIcon(provider, Array.IndexOf(options, provider) + 1) : Icons.Folder.ToString();
-	}
 
 	private static string CloudProviderIcon(string provider, int fallbackNumber)
 		=> provider.ToLowerInvariant() switch
@@ -277,23 +268,17 @@ public static class Messages
 
 	public static void WriteBanner(string text)
 	{
-		Console.Write($"{Icons.Banner} ");
-		WriteLine(text);
-		Console.WriteLine(text);
-		Console.Write($"{Icons.Banner} ");
-		WriteLine(text);
-	}
-
-	private static void WriteLine(string text, char underlineChar = '─')
-	{
-		for (int i = 0; i < text.Length; i++) Console.Write(underlineChar);
-		Console.WriteLine();
+		var version = typeof(Messages).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+		foreach (var line in CliHelpStyle.Banner($"{text} (iorg v{version})", CliHelpStyle.UseColor())) Console.WriteLine(line);
 	}
 
 	public static void WriteHelp()
 	{
-		foreach (var line in Help) WriteSuccess(line + Icons.HelpLineWidthCompensation);
+		foreach (var line in FormatHelp(CliHelpStyle.UseColor())) Console.WriteLine(line);
 	}
+	internal static void WriteHelpText(string text)
+		=> Console.WriteLine(CliHelpStyle.Syntax(text, "36", CliHelpStyle.UseColor()));
+
 }
 
 public static class ImageOrganizer
@@ -725,7 +710,6 @@ public static class ImageOrganizer
 
 internal static class Program
 {
-	private const int CommandHelpOptionWidth = 15;
 	private static readonly string[] Commands = ["organize", "list", "move", "clean"];
 
 	private static int Main(string[] args)
@@ -1293,7 +1277,7 @@ internal static class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber> | (-t|--tenant) <name>] ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--move] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
+				"Usage: iorg organize [<Subscriber>|(-t|--tenant) <name>] ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--move] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
@@ -1315,8 +1299,8 @@ internal static class Program
 			_ => Array.Empty<string>()
 		};
 		foreach (var line in lines)
-			Messages.WriteSuccess(line);
-		Messages.WriteInfo("Global options: -c|--cloud, -d|--debug, -l|--nologo");
+			Messages.WriteHelpText(line);
+		Messages.WriteHelpText("Global options: -c|--cloud, -d|--debug, -l|--nologo");
 		WriteCommandHelpOption("-c|--cloud:", Messages.CloudDescription());
 		WriteCommandHelpOption("-r|--root:", "exact ImageTree root; alternative to -a|--app");
 		WriteCommandHelpOption("-a|--app:", "application root; Image is appended; alternative to -r|--root");
@@ -1337,14 +1321,24 @@ internal static class Program
 			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
 			WriteCommandHelpOption("--no-overwrite:", "reject differing existing images before writing any source image; default is verified in-place update");
 			WriteCommandHelpOption("--move:", "for one local source file, delete it only after verified ingestion; --delete-source is an alias");
-			Messages.WriteInfo("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
+			Messages.WriteHelpText("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
 		}
 
 	}
 
 	private static void WriteCommandHelpOption(string option, string description)
-		=> Messages.WriteInfo(
-			$"{option.PadRight(CommandHelpOptionWidth)}{description}{Icons.HelpLineWidthCompensation}");
+	{
+		var icon = option switch
+		{
+			"-c|--cloud:" or "-r|--root:" or "-a|--app:" or "-t|--tenant:" => Icons.Folder.ToString(),
+			"-s|--source:" or "-o|--out:" or "--move:" => Icons.File.ToString(),
+			_ => Icons.Info.ToString()
+		};
+		var row = new CliHelpStyle.Row(option, icon, description,
+			option == "-c|--cloud:" ? Messages.CloudProviderOptions() : null,
+			option == "-c|--cloud:" ? Messages.CloudProviderOptions().FirstOrDefault() : null);
+		Console.WriteLine(CliHelpStyle.FormatRow(row, 16, CliHelpStyle.UseColor()));
+	}
 
 	private static string? RunBlockerReason(
 		RaiPath? sourceRoot,

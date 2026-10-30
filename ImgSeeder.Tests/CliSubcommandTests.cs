@@ -536,13 +536,13 @@ public sealed class CliSubcommandTests : IDisposable
 			_ => throw new Xunit.Sdk.XunitException($"Unexpected configured cloud provider: {firstProvider}")
 		};
 		Assert.False(string.IsNullOrEmpty(providerIcon));
-		Assert.Equal(15, cloud.IndexOf(providerIcon, StringComparison.Ordinal));
-		Assert.Equal(15, pathConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
-		Assert.Equal(15, namingConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
+		Assert.Equal(22, cloud.IndexOf(providerIcon, StringComparison.Ordinal));
+		Assert.Equal(22, pathConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
+		Assert.Equal(22, namingConvention.IndexOf(Icons.NumberBoxOutlines[0], StringComparison.Ordinal));
 		Assert.DoesNotContain("①", help.output, StringComparison.Ordinal);
-		Assert.EndsWith(Icons.HelpLineWidthCompensation, cloud, StringComparison.Ordinal);
-		Assert.EndsWith(Icons.HelpLineWidthCompensation, pathConvention, StringComparison.Ordinal);
-		Assert.EndsWith(Icons.HelpLineWidthCompensation, namingConvention, StringComparison.Ordinal);
+		Assert.DoesNotContain("\t", cloud);
+		Assert.DoesNotContain("\t", pathConvention);
+		Assert.DoesNotContain("\t", namingConvention);
 	}
 
 	[Fact]
@@ -577,7 +577,7 @@ public sealed class CliSubcommandTests : IDisposable
 	{
 		var run = RunIorg("--version");
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.5.14", run.output.Trim());
+		Assert.Equal("iorg v4.5.15", run.output.Trim());
 	}
 
 	[Fact]
@@ -599,7 +599,7 @@ public sealed class CliSubcommandTests : IDisposable
 		var run = RunIorg(args);
 
 		Assert.Equal(0, run.exitCode);
-		Assert.Equal("iorg v4.5.14", run.output.Trim());
+		Assert.Equal("iorg v4.5.15", run.output.Trim());
 		Assert.Empty(run.error);
 	}
 
