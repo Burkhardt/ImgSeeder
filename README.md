@@ -1,11 +1,11 @@
 # ImgSeeder
 
-## Latest Version 4.5.15
+## Latest Version 4.5.16
 
-Help now follows the shared CLI theme with aligned columns, syntax colors,
-provider badges, and a versioned heading. Import and receipt behavior is unchanged.
+Adds structured JSON file inventory and read-only byte/visual duplicate discovery
+under CR075, while preserving existing filename-list output.
 
-Latest release notes: [ImgSeeder 4.5.15 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4515).
+Latest release notes: [ImgSeeder 4.5.16 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4516).
 
 ## Previous Versions
 

@@ -63,9 +63,10 @@ public static class Messages
 	{
 		CliHelpStyle.Row[] rows =
 		[
-			new("Commands:", Icons.Info.ToString(), "organize, list, move, clean"),
+			new("Commands:", Icons.Info.ToString(), "organize, list, move, clean, duplicates"),
 			new("  iorg organize ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-o|--out <file>] [--json]", "", ""),
-			new("  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--json|--quiet]", "", ""),
+			new("  iorg list <FileNamePattern> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--long] [--json|--quiet]", "", ""),
+			new("  iorg duplicates <FileOrPattern> (-r <dir>|-a <app>) [--match <bytes|visual>] [--visual-profile strict-v1] [--json]", "", ""),
 			new("  iorg move <SourceItemId> [<TargetItemId>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [(-p|--pathconv) <1|2|3|4>]", "", ""),
 			new("  iorg clean <ItemId> ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>] [-i|--image <nr>] [--force]", "", ""),
 			new("  iorg clean --cache ((-r|--root) <dir>|(-a|--app) <dir>) [(-t|--tenant) <name>]", "", ""),
@@ -78,7 +79,13 @@ public static class Messages
 			new("-s, --source", Icons.Folder.ToString(), SourceDescription()),
 			new("--source-url", Icons.File.ToString(), "HTTPS ZIP archive source"),
 			new("-o, --out", Icons.File.ToString(), "receipt JSON file; --receipt is an alias"),
-			new("--json", Icons.Info.ToString(), "write the ImageImport receipt to stdout"),
+			new("--json", Icons.Info.ToString(), "write machine-readable output for the selected command"),
+			new("--long", Icons.Info.ToString(), "list only: structured inventory with --json"),
+			new("--all-files", Icons.File.ToString(), "list only: include unrecognized files; metadata only"),
+			new("--checksum", Icons.Info.ToString(), "list only: sha256 with --long --json"),
+			new("--ignore-case", Icons.Info.ToString(), "list or duplicates: match filename patterns without case distinctions"),
+			new("--match", Icons.Info.ToString(), "duplicates only: <bytes|visual>; bytes is the default"),
+			new("--visual-profile", Icons.Info.ToString(), "duplicates only: strict-v1; complete visuals, audio excluded"),
 			new("--exif", Icons.Info.ToString(), "select '*' or comma-separated EXIF tags/patterns"),
 			new("--move", Icons.File.ToString(), "delete a single source file only after verified ingestion"),
 			new("--no-overwrite", Icons.Info.ToString(), "reject differing existing media before writing"),
@@ -708,9 +715,9 @@ public static class ImageOrganizer
 	}
 }
 
-internal static class Program
+internal static partial class Program
 {
-	private static readonly string[] Commands = ["organize", "list", "move", "clean"];
+	private static readonly string[] Commands = ["organize", "list", "move", "clean", "duplicates"];
 
 	private static int Main(string[] args)
 	{
@@ -889,12 +896,13 @@ internal static class Program
 			{
 				"organize" => RunOrganizeCommand(args),
 				"list" => RunListCommand(args),
+				"duplicates" => RunDuplicatesCommand(args),
 				"move" => RunMoveCommand(args),
 				"clean" => RunCleanCommand(args),
 				_ => throw new ArgumentException($"Unknown command '{command}'.")
 			};
 		}
-		catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or JsonException or UnauthorizedAccessException)
+		catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or JsonException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or OperationCanceledException or TimeoutException)
 		{
 			Console.Error.WriteLine($"error: {ex.Message}");
 			Console.Error.WriteLine($"Run 'iorg {command} --help' for command usage.");
@@ -1039,15 +1047,22 @@ internal static class Program
 	private static int RunListCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "--exif", "-i", "--image"])
+			.Concat(["-r", "--root", "-a", "--app", "-t", "--tenant", "--subscriber", "--exif", "-i", "--image", "--checksum"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet"])
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--quiet", "--long", "--all-files", "--ignore-case"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count != 1)
 			throw new ArgumentException("list requires exactly one <FileNamePattern>.");
 		if (HasOption(args, "--json") && HasOption(args, "--quiet"))
 			throw new ArgumentException("Use only one of --json or --quiet.");
+		var longFormat = HasOption(args, "--long");
+		var allFiles = HasOption(args, "--all-files");
+		var checksum = ParamValue(args, "--checksum");
+		if ((longFormat || allFiles || checksum is not null) && (!longFormat || !HasOption(args, "--json") || HasOption(args, "--quiet", "--exif")))
+			throw new ArgumentException("Structured inventory requires --long --json, without --quiet or --exif.");
+		if (checksum is not null && checksum != "sha256") throw new ArgumentException("--checksum supports only sha256.");
+		if (allFiles && checksum is not null) throw new ArgumentException("--all-files is metadata-only and cannot use --checksum.");
 		var exif = ParamValue(args, "--exif");
 		if (exif is not null)
 		{
@@ -1064,6 +1079,20 @@ internal static class Program
 		var imageNumber = OptionalImageNumber(args);
 		var itemIdFilter = imageNumber is not null && !positionals[0].Contains('*') && !positionals[0].Contains('?') && !positionals[0].Contains('.')
 			? positionals[0] : null;
+		if (longFormat || HasOption(args, "--ignore-case"))
+		{
+			var inventory = ReadOnlyScope(args, subscriberRoot).InventoryAsync(itemIdFilter is null ? positionals[0] : itemIdFilter + "*",
+				HasOption(args, "--ignore-case"), allFiles, checksum is not null).GetAwaiter().GetResult()
+				.Where(item => imageNumber is null || new ImageFile(item.FullPath, ImageNamingConvention.Structured).ImageNumber == imageNumber)
+				.Where(item => itemIdFilter is null || new ImageFile(item.FullPath, ImageNamingConvention.Structured).ItemId == itemIdFilter).ToList();
+			if (HasOption(args, "--json")) Console.WriteLine(longFormat ? JsonSerializer.Serialize(inventory) : JsonSerializer.Serialize(inventory.Select(item => item.Name)));
+			else
+			{
+				foreach (var item in inventory) Console.WriteLine(HasOption(args, "--quiet") ? item.FullPath : item.Name);
+				if (!HasOption(args, "--quiet")) Messages.WriteSuccess($"{inventory.Count} matching file(s).");
+			}
+			return 0;
+		}
 		var files = ImageOrganizer.ListTreeFiles(subscriberRoot, itemIdFilter is null ? positionals[0] : itemIdFilter + "*")
 			.Where(file => imageNumber is null || new ImageFile(file.FullName, ImageNamingConvention.Structured).ImageNumber == imageNumber)
 			.Where(file => itemIdFilter is null || string.Equals(new ImageFile(file.FullName, ImageNamingConvention.Structured).ItemId, itemIdFilter, StringComparison.Ordinal))
@@ -1285,6 +1314,11 @@ internal static class Program
 				"Usage: iorg list <FileNamePattern> [-i|--image <nr>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [--json|--quiet] [global options]",
 				$"List is strictly read-only and includes media, .puml, and .raid artifacts. Supported media: {RaiImage.MediaTypes.Default.String}. --exif selects still-image metadata."
 			},
+			"duplicates" => new[]
+			{
+				"Usage: iorg duplicates <FileOrPattern> ((-r|--root) <dir>|(-a|--app) <app>) [--tenant <name>] [--match <bytes|visual>] [--visual-profile strict-v1] [--ignore-case] [--json]",
+				"Read-only content discovery. Literal source returns an array; wildcard returns a relative-path dictionary. Byte mode confirms full bytes. Visual strict-v1 compares complete visuals and excludes audio."
+			},
 			"move" => new[]
 			{
 				"Usage: iorg move <SourceItemId> [<TargetItemId>] [(-t|--tenant) <name>] ((-r|--root) <dir>|(-a|--app) <dir>) [(-p|--pathconv) <1|2|3|4>] [--json|--quiet] [global options]",
@@ -1309,6 +1343,13 @@ internal static class Program
 			WriteCommandHelpOption("-p|--pathconv:", Messages.PathConventionDescription());
 		if (command == "organize")
 			WriteCommandHelpOption("-n|--nameconv:", Messages.NamingConventionDescription());
+		if (command == "list")
+		{
+			WriteCommandHelpOption("--long --json:", "structured file inventory; existing --json remains a filename array");
+			WriteCommandHelpOption("--all-files:", "metadata-only census, including unrecognized files; requires --long --json");
+			WriteCommandHelpOption("--checksum sha256:", "stream content fingerprint; requires --long --json and excludes --all-files");
+		}
+		if (command is "list" or "duplicates") WriteCommandHelpOption("--ignore-case:", "match filename patterns case-insensitively, including .MOV");
 		if (command is "list" or "organize")
 			WriteCommandHelpOption("--exif:", "'*', one EXIF tag, or comma-separated tags/patterns; structured JSON output");
 		if (command is "list" or "clean")
