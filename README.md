@@ -1,11 +1,11 @@
 # ImgSeeder
 
-## Latest Version 4.5.16
+## Latest Version 4.5.17
 
 Adds structured JSON file inventory and read-only byte/visual duplicate discovery
 under CR075, while preserving existing filename-list output.
 
-Latest release notes: [ImgSeeder 4.5.16 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4516).
+Latest release notes: [ImgSeeder 4.5.17 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#4517).
 
 ## Previous Versions
 
