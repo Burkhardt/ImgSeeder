@@ -161,7 +161,7 @@ public static class ImageImport
 		if (exif is not null) ImageExif.ValidateSelector(exif);
 		if ((source is null) == (sourceUrl is null)) throw new ArgumentException("Specify exactly one of --source or --source-url.");
 		if (sourceUrl is not null) ValidateUrl(sourceUrl);
-		var zipInput = sourceUrl is not null || string.Equals(System.IO.Path.GetExtension(source), ".zip", StringComparison.OrdinalIgnoreCase);
+		var zipInput = sourceUrl is not null || string.Equals(new RaiFile(source!).Ext, "zip", StringComparison.OrdinalIgnoreCase);
 		var singleFile = !zipInput && source is not null && new RaiFile(source).Exists();
 		if (moveSource && !singleFile)
 			throw new ArgumentException("--move is only supported for single-file sources; directory and archive sources cannot be deleted.");
@@ -172,8 +172,8 @@ public static class ImageImport
 			PathMode = pathConvention, NamingMode = namingConvention, IncludeExif = exif is not null,
 			IncludeFiles = singleFile,
 			Source = new(zipInput ? "Zip" : singleFile ? "File" : "Directory", sourceUrl is null
-				? System.IO.Path.GetFileName(source!.TrimEnd('/', '\\'))
-				: System.IO.Path.GetFileName(sourceUrl.AbsolutePath))
+				? new RaiFile(source!.TrimEnd('/', '\\')).NameWithExtension
+				: new RaiFile(sourceUrl.AbsolutePath).NameWithExtension)
 		};
 		RaiPath? workspace = null;
 		try
@@ -219,7 +219,7 @@ public static class ImageImport
 					// CRC/decompression errors are reported by unzip's exit status.
 					foreach (var entry in archive.Entries.Where(e => !e.FullName.EndsWith('/')))
 					{
-						using var extractedFile = new RaiFile(System.IO.Path.Combine(extracted.FullPath, entry.FullName)).OpenRead();
+						using var extractedFile = new RaiFile(new RaiFile(new RaiPath(extracted.FullPath), entry.FullName).FullName).OpenRead();
 						if (extractedFile.Length != entry.Length) throw new InvalidDataException("Extracted size differs from ZIP metadata: " + entry.FullName);
 					}
 				}
@@ -228,7 +228,7 @@ public static class ImageImport
 					foreach (var entry in archive.Entries.Where(e => !e.FullName.EndsWith('/')))
 					{
 						using var data = new LimitedReadStream(entry.Open(), entry.Length);
-						await new RaiFile(System.IO.Path.Combine(extracted.FullPath, entry.FullName)).WriteNewFromAsync(data, cancellationToken);
+						await new RaiFile(new RaiFile(new RaiPath(extracted.FullPath), entry.FullName).FullName).WriteNewFromAsync(data, cancellationToken);
 					}
 				}
 				var plan = new List<Candidate>();
@@ -237,8 +237,8 @@ public static class ImageImport
 					cancellationToken.ThrowIfCancellationRequested();
 					var row = new ImageImportEntry { SourceEntry = entry.FullName };
 					receipt.Files.Add(row);
-					var staged = new RaiFile(System.IO.Path.Combine(extracted.FullPath, entry.FullName));
-					if (entry.FullName.EndsWith('/') || !Extensions.Contains(System.IO.Path.GetExtension(entry.Name)) || entry.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) || entry.Name.StartsWith("._", StringComparison.Ordinal))
+					var staged = new RaiFile(new RaiFile(new RaiPath(extracted.FullPath), entry.FullName).FullName);
+					if (entry.FullName.EndsWith('/') || !Extensions.Contains("." + staged.Ext) || entry.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) || entry.Name.StartsWith("._", StringComparison.Ordinal))
 					{
 						row.Status = "Skipped";
 						row.Reason = "Directory, metadata, or unsupported media type.";
@@ -269,7 +269,7 @@ public static class ImageImport
 					expanded += input.Length;
 					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix));
 				}
-				if (moveSource && plan.Count == 1 && System.IO.Path.GetFullPath(source!) == plan[0].Destination.FullName)
+				if (moveSource && plan.Count == 1 && new RaiFile(source!).FullName == plan[0].Destination.FullName)
 					throw new InvalidDataException("--move source and destination are the same file.");
 				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
 				if (moveSource && receipt.Status == "Completed" && plan.Count == 1)
@@ -324,9 +324,8 @@ public static class ImageImport
 		row.Ext = normalized.Ext;
 		row.ImageNumber = normalized.ImageNumber;
 		row.SizeBytes = length;
-		row.RelativePath = System.IO.Path.GetRelativePath(root.FullPath, target.FullName).Replace('\\', '/');
-		if (row.RelativePath.StartsWith("../", StringComparison.Ordinal) || System.IO.Path.IsPathRooted(row.RelativePath))
-			throw new InvalidDataException("Image destination is outside the tenant root.");
+		try { row.RelativePath = root.RelativeFileName(target); }
+		catch (ArgumentException ex) { throw new InvalidDataException("Image destination is outside the tenant root.", ex); }
 		var prefix = itemTreePrefix.Trim('/');
 		row.ItemTreePath = prefix.Length == 0 ? row.RelativePath : prefix + "/" + row.RelativePath;
 		if (exif is not null && !RaiImage.MediaTypes.IsVideo(normalized.Ext)) row.Exif = await ImageExif.ReadMetadataAsync(source, exif, ct);

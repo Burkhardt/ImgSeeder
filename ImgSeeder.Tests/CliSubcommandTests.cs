@@ -59,11 +59,11 @@ public sealed class CliSubcommandTests : IDisposable
 			PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = 1 };
 		Assert.True(image.Exists());
 
-		File.WriteAllText(source.FullName, "revised image");
+		new TextFile(source.FullName).WriteAllText("revised image");
 		var second = RunIorg("organize", "--source", sourceRoot.FullPath, "--root", destination.FullPath, "--nologo");
 		Assert.Equal(0, second.exitCode);
 		Assert.Contains("1 updated", second.output);
-		Assert.Equal("revised image", File.ReadAllText(image.FullName));
+		Assert.Equal("revised image", new TextFile(image.FullName).ReadAllText());
 	}
 
 	[Fact]
@@ -324,7 +324,7 @@ public sealed class CliSubcommandTests : IDisposable
 		Assert.Equal(0, run.exitCode);
 		Assert.Equal(
 			"[\"ScheduleRehearsal.raid\",\"ScheduleRehearsal.svg\"]",
-			 run.output.Trim());
+				run.output.Trim());
 	}
 
 	[Fact]

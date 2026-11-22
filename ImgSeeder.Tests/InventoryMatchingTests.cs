@@ -32,7 +32,7 @@ public sealed class InventoryMatchingTests : IDisposable
 		Assert.EndsWith("Z", item.GetProperty("LastModifiedUtc").GetString());
 		Assert.Equal(Environment.MachineName, item.GetProperty("ExecutionHost").GetString());
 		Assert.Equal(JsonValueKind.Null, item.GetProperty("Cloud").ValueKind);
-		Assert.Equal(await MediaContent.Sha256Async(video), item.GetProperty("Sha256").GetString());
+		Assert.Equal(await MediaContent.Sha256Async(video, TestContext.Current.CancellationToken), item.GetProperty("Sha256").GetString());
 	}
 	[Fact]
 	public void AC3_AllFilesIsMetadataOnlyAndRejectsChecksum()

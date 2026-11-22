@@ -964,9 +964,7 @@ internal static partial class Program
 			itemTreeBase = new RaiPath(cloudDirectory ?? throw new ArgumentException("The selected cloud root is not configured."));
 		}
 		else itemTreeBase = new RaiPath(root.Value);
-		var pathPrefix = Path.GetRelativePath(itemTreeBase.FullPath, subscriberRoot.FullPath).Replace('\\', '/');
-		if (pathPrefix.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(pathPrefix))
-			throw new ArgumentException("The destination is outside the selected ItemTree root.");
+		var pathPrefix = itemTreeBase.RelativeDirectoryName(subscriberRoot);
 		if (pathPrefix == ".") pathPrefix = string.Empty;
 		var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), subscriberRoot,
 			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif, noOverwrite: HasOption(args, "--no-overwrite"),
@@ -974,9 +972,9 @@ internal static partial class Program
 		var receiptJson = JsonSerializer.Serialize(receipt);
 		if (receiptPath is not null)
 		{
-			var outputPath = Path.GetFullPath(receiptPath);
-			Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-			File.WriteAllText(outputPath, receiptJson + Environment.NewLine);
+			var output = new RaiFile(receiptPath);
+			output.mkdir();
+			LocalFileSystem.WriteText(output.FullName, receiptJson + Environment.NewLine);
 		}
 		if (json) Console.WriteLine(receiptJson);
 		else Console.WriteLine($"{receipt.Status}: {receipt.Summary.Copied} copied, {receipt.Summary.Updated} updated, {receipt.Summary.Unchanged} unchanged, {receipt.Summary.Skipped} skipped, {receipt.Summary.Failed} failed.");
@@ -1104,7 +1102,7 @@ internal static partial class Program
 			foreach (var file in files.Where(f => ImageTypes.Default.Array.Any(e => string.Equals(e.Trim().TrimStart('.'), f.Ext.TrimStart('.'), StringComparison.OrdinalIgnoreCase))))
 			{
 				var metadata = ImageExif.ReadMetadataAsync(file, exif).GetAwaiter().GetResult();
-				rows.Add(new { FileName = file.NameWithExtension, RelativePath = Path.GetRelativePath(subscriberRoot.FullPath, file.FullName).Replace('\\', '/'), Exif = metadata });
+				rows.Add(new { FileName = file.NameWithExtension, RelativePath = subscriberRoot.RelativeFileName(file), Exif = metadata });
 				foreach (var diagnostic in metadata.Diagnostics) Console.Error.WriteLine($"{file.NameWithExtension}: {diagnostic}");
 			}
 			Console.WriteLine(JsonSerializer.Serialize(rows));

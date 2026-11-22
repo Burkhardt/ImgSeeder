@@ -300,7 +300,7 @@ public class SourceImageStructuredTreeTests
 			ImageNumber = imageNumber
 		};
 		file.mkdir();
-		File.WriteAllText(file.FullName, file.NameWithExtension);
+		new TextFile(file.FullName).WriteAllText(file.NameWithExtension);
 		return file;
 	}
 
