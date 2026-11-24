@@ -77,6 +77,7 @@ public static class Messages
 			new("-d, --debug", DebugIcon().ToString(), "enable debug output"),
 			new("-c, --cloud", Icons.Folder.ToString(), CloudDescription(), CloudProviderOptions(), CloudProviderOptions().FirstOrDefault()),
 			new("-s, --source", Icons.Folder.ToString(), SourceDescription()),
+			new("--item-id", Icons.Info.ToString(), "eight-character album ID for album.json"),
 			new("--source-url", Icons.File.ToString(), "HTTPS ZIP archive source"),
 			new("-o, --out", Icons.File.ToString(), "receipt JSON file; --receipt is an alias"),
 			new("--json", Icons.Info.ToString(), "write machine-readable output for the selected command"),
@@ -88,7 +89,6 @@ public static class Messages
 			new("--visual-profile", Icons.Info.ToString(), "duplicates only: strict-v1; complete visuals, audio excluded"),
 			new("--exif", Icons.Info.ToString(), "select '*' or comma-separated EXIF tags/patterns"),
 			new("--move", Icons.File.ToString(), "delete a single source file only after verified ingestion"),
-			new("--no-overwrite", Icons.Info.ToString(), "reject differing existing media before writing"),
 			new("--force", Icons.Force.ToString(), "perform exact-ItemId deletion"),
 			new("-p, --pathconv", SelectedOptionIcon(PathConvention), PathConventionDescription()),
 			new("-n, --nameconv", SelectedOptionIcon(NamingConvention), NamingConventionDescription()),
@@ -913,9 +913,9 @@ internal static partial class Program
 	private static int RunOrganizeCommand(string[] args)
 	{
 		var valueOptions = CommandGlobalValueOptions
-			.Concat(["-s", "--source", "--source-url", "-o", "--out", "--receipt", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
+			.Concat(["-s", "--source", "--source-url", "-o", "--out", "--receipt", "--item-id", "--import-id", "--activity-id", "--exif", "--max-archive-bytes", "--max-expanded-bytes", "--max-entries", "--download-timeout-seconds", "-r", "--root", "-a", "--app", "-p", "--pathconv", "-n", "--nameconv", "-t", "--tenant", "--subscriber"])
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--no-overwrite", "--move", "--delete-source"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var allowed = CommandGlobalSwitchOptions.Concat(valueOptions).Concat(["--json", "--move", "--delete-source"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		var positionals = ValidateCommandTokens(args, allowed, valueOptions);
 		if (positionals.Count > 1)
 			throw new ArgumentException("organize accepts at most one positional <Subscriber>.");
@@ -941,6 +941,13 @@ internal static partial class Program
 		if (positionals.Count == 1 && !string.IsNullOrWhiteSpace(subscriberOption))
 			throw new ArgumentException("Specify the subscriber either positionally or with -t/--tenant, not both.");
 
+		var selectedProvider = EffectiveCloudProvider(Messages.CloudProvider, root.Value,
+			HasOption(args, "-c", "--cloudprovider", "--cloud"));
+		var albumId = ParamValue(args, "--item-id");
+		// A bare cloud application name in a catalog import denotes its Image tree.
+		if (albumId is not null && selectedProvider is not null && !root.IsApplicationRoot
+			&& root.Value.IndexOfAny(['/', '\\']) < 0 && root.Value != "." && root.Value != "..")
+			root = root with { IsApplicationRoot = true };
 		var rootBinding = BindCommandRoot(
 			root,
 			Messages.CloudProvider,
@@ -956,8 +963,6 @@ internal static partial class Program
 			(int?)entries, seconds is { } duration ? TimeSpan.FromSeconds(duration) : null);
 		var subscriberRoot = ResolveCommandSubscriberRoot(rootBinding);
 		RaiPath itemTreeBase;
-		var selectedProvider = EffectiveCloudProvider(Messages.CloudProvider, root.Value,
-			HasOption(args, "-c", "--cloudprovider", "--cloud"));
 		if (selectedProvider is not null)
 		{
 			string? cloudDirectory = Os.Config?.Cloud?[selectedProvider];
@@ -967,8 +972,8 @@ internal static partial class Program
 		var pathPrefix = itemTreeBase.RelativeDirectoryName(subscriberRoot);
 		if (pathPrefix == ".") pathPrefix = string.Empty;
 		var receipt = ImageImport.RunAsync(source, url, importId, ParamValue(args, "--activity-id"), subscriberRoot,
-			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif, noOverwrite: HasOption(args, "--no-overwrite"),
-			moveSource: HasOption(args, "--move", "--delete-source"), itemTreePrefix: pathPrefix).GetAwaiter().GetResult();
+			rootBinding.Subscriber, limits, pathMode, nameMode, exif: exif,
+			moveSource: HasOption(args, "--move", "--delete-source"), itemTreePrefix: pathPrefix, albumId: albumId).GetAwaiter().GetResult();
 		var receiptJson = JsonSerializer.Serialize(receipt);
 		if (receiptPath is not null)
 		{
@@ -1304,7 +1309,7 @@ internal static partial class Program
 		{
 			"organize" => new[]
 			{
-				"Usage: iorg organize [<Subscriber>|(-t|--tenant) <name>] ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--move] [--no-overwrite] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
+				"Usage: iorg organize [<Subscriber>|(-t|--tenant) <name>] ((-s|--source) <file|dir|zip>|--source-url <https-url>) ((-r|--root) <dir>|(-a|--app) <dir>) [-o|--out|--receipt <file>] [--import-id <id>] [--item-id <Album8>] [--move] [(-p|--pathconv) <1|2|3|4>] [(-n|--nameconv) <1|2|3>] [global options]",
 				"Without an explicit subscriber, -r/--root is the complete subscriber destination and its final segment supplies the subscriber identity."
 			},
 			"list" => new[]
@@ -1356,9 +1361,9 @@ internal static partial class Program
 		{
 			WriteCommandHelpOption("-s|--source:", $"single media file, source directory, or ZIP archive; supported: {RaiImage.MediaTypes.Default.String}; --source-url accepts HTTPS ZIP");
 			WriteCommandHelpOption("-o|--out:", "write receipt JSON to a file; --receipt is an alias");
+			WriteCommandHelpOption("--item-id:", "eight-character album ID for album.json");
 			WriteCommandHelpOption("--import-id:", "optional receipt Id; generated for JSON output when omitted; --activity-id associates an Activity");
 			WriteCommandHelpOption("--json:", "ImageImport receipt to stdout; diagnostics to stderr; import defaults are pathconv 3/nameconv 3");
-			WriteCommandHelpOption("--no-overwrite:", "reject differing existing images before writing any source image; default is verified in-place update");
 			WriteCommandHelpOption("--move:", "for one local source file, delete it only after verified ingestion; --delete-source is an alias");
 			Messages.WriteHelpText("Optional positive bounds: --max-archive-bytes, --max-expanded-bytes, --max-entries, --download-timeout-seconds; omitted means no application limit.");
 		}

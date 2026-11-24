@@ -2,8 +2,8 @@
 
 `iorg` is the RAIkeep command-line tool for organizing, validating, and managing images and video containers within an **ImageTree**.
 
-This guide covers ImgSeeder 4.7.1, including CR060 filename handling,
-CR061 idempotent imports, and CR067 single-file media ingestion (`mp4`, `mov`,
+This guide covers ImgSeeder 4.7.2, including CR060 filename handling,
+CR061 batch receipts, and CR067 single-file media ingestion (`mp4`, `mov`,
 `webm`, `mkv`, and `avi`) with optional verified scratch-file cleanup.
 
 This guide walks through setting up cloud storage integration, installing the tools, performing bulk imports from a ZIP archive, and managing/cleaning images (e.g. for the sample order-sheet photo archive).
@@ -79,8 +79,7 @@ iorg organize --source /tmp/Server-Clip-001.mp4 \
 
 The `ItemTreePath` is relative to the configured cloud root, so callers can
 use it without calculating the `ItemIdTree8x2` directories. `--json` alone
-writes the receipt to stdout; `-o` is optional. A repeat import with identical
-bytes reports `Unchanged`, while changed bytes report `Updated`.
+writes the receipt to stdout; `-o` is optional. A repeat import rewrites and verifies the destination and reports `Updated`, including for identical input.
 
 ---
 
@@ -107,7 +106,6 @@ iorg organize \
 - `--source <file.zip>` (or `-s <file.zip>`): Path to the source archive.
 - `-o <file.json>` (or `--out` / `--receipt`): Writes the import receipt directly to the specified file.
 - `--json`: Emits compact `ReceiptVersion 3` structured JSON output. (Note: `--import-id` is optional; an ID is generated automatically if omitted).
-- `--no-overwrite`: Optional guard that rejects an archive before copying if any existing destination has different bytes. Without it, a rerun leaves identical images alone and updates changed images in place.
 
 ---
 

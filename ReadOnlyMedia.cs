@@ -50,7 +50,8 @@ public sealed class ReadOnlyMedia
 			Name = file.NameWithExtension, FullPath = file.CanonicalFullName, RelativePath = relative,
 			CloudRelativePath = cloudRelative, ItemTreePath = managed ? cloudRelative ?? relative : null,
 			Extension = string.IsNullOrEmpty(file.Ext) ? "" : "." + file.Ext.TrimStart('.').ToLowerInvariant(),
-			MediaKind = IsMedia(file) ? MediaTypes.IsVideo(file.Ext) ? "Video" : "Image" : null,
+			MediaKind = MediaTypes.IsStreamingAsset(file.Ext) ? "Streaming" : MediaTypes.IsCatalogOrMetadata(file.Ext) ? "Metadata"
+				: IsMedia(file) ? MediaTypes.IsVideo(file.Ext) ? "Video" : "Image" : null,
 			SizeBytes = file.Length, LastModifiedUtc = file.LastWriteTimeUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
 			Cloud = cloud, ResolvedRoot = root.FullPath, ExecutionHost = Environment.MachineName, Sha256 = hash
 		};
@@ -77,7 +78,9 @@ public sealed class ReadOnlyMedia
 		if (selector.Replace('\\', '/').Split('/').Contains("..")) throw new ArgumentException("Source path cannot escape the selected root.");
 		var wildcard = IsWildcard(selector);
 		if (wildcard && (selector.Contains('/') || selector.Contains('\\'))) throw new ArgumentException("Use a filename wildcard and select its subtree through --root.");
-		var files = Scan(false).Where(IsMedia).ToList();
+		var files = Scan(false).Where(IsMedia)
+			.Where(file => mode != "visual" || !(MediaTypes.IsStreamingAsset(file.Ext) || MediaTypes.IsCatalogOrMetadata(file.Ext)))
+			.ToList();
 		var source = wildcard ? files.Where(f => Matches(f.NameWithExtension, selector, ignoreCase)).ToList()
 			: selector.Contains('/') || selector.Contains('\\') ? files.Where(f => f.CanonicalFullName == root.ContainedFile(selector).CanonicalFullName).ToList()
 			: files.Where(f => Matches(f.NameWithExtension, selector, ignoreCase)).ToList();

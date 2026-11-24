@@ -72,7 +72,7 @@ public sealed class ImageImportReceipt
 			for (var start = 0; start < entries.Length;)
 			{
 				var end = start;
-				while (end + 1 < entries.Length && entries[end + 1].ImageNumber == (long?)entries[end].ImageNumber + 1) end++;
+				while (entries[end].ImageNumber.HasValue && end + 1 < entries.Length && entries[end + 1].ImageNumber == (long?)entries[end].ImageNumber + 1) end++;
 				if (end > start && entries[start].ImageNumber is >= 0)
 					ranges.Add(new(group.Key.ItemId!, PathMode.ToString(), NamingMode.ToString(),
 						entries[start].ImageNumber!.Value, entries[end].ImageNumber!.Value, end - start + 1, group.Key.Ext!,
@@ -131,7 +131,7 @@ public sealed class ImageImportEntry
 /// <summary>CR049: preflight input in full, then copy directly to final ImageTree paths.</summary>
 public static class ImageImport
 {
-	private sealed record Candidate(ImageImportEntry Entry, ImageTreeFile Destination, Func<Stream> Open, long Length, byte[] Hash);
+	private sealed record Candidate(ImageImportEntry Entry, RaiFile Destination, Func<Stream> Open, long Length, byte[] Hash);
 	private static readonly HashSet<string> Extensions = RaiImage.MediaTypes.Default.Array
 		.Select(e => "." + e.Trim().TrimStart('.')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -141,21 +141,26 @@ public static class ImageImport
 		PathConventionType pathConvention = PathConventionType.ItemIdTree8x2,
 		ImageNamingConvention namingConvention = ImageNamingConvention.Structured,
 		HttpClient? downloadClient = null, CancellationToken cancellationToken = default, string? exif = null,
-		bool noOverwrite = false, bool moveSource = false, string? itemTreePrefix = null)
+		bool moveSource = false, string? itemTreePrefix = null, string? albumId = null)
 		// Archive metadata inspection and filename parsing are synchronous work too.
 		// Dispatch the complete operation so a UI caller can safely await this API.
 		=> Task.Run(() => RunCoreAsync(source, sourceUrl, importId, activityId, destination,
-			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif, noOverwrite,
-			moveSource, itemTreePrefix), cancellationToken);
+			tenant, limits, pathConvention, namingConvention, downloadClient, cancellationToken, exif,
+			moveSource, itemTreePrefix, albumId), cancellationToken);
 
 	private static async Task<ImageImportReceipt> RunCoreAsync(
 		string? source, Uri? sourceUrl, string? importId, string? activityId,
 		RaiPath destination, string tenant, ImageImportLimits limits,
 		PathConventionType pathConvention, ImageNamingConvention namingConvention,
-		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif, bool noOverwrite,
-		bool moveSource, string? itemTreePrefix)
+		HttpClient? downloadClient, CancellationToken cancellationToken, string? exif,
+		bool moveSource, string? itemTreePrefix, string? albumId)
 	{
 		if (importId is not null) PitItem.ValidateLiveId(importId);
+		if (albumId is not null)
+		{
+			PitItem.ValidateLiveId(albumId);
+			if (!IsAlbumId(albumId)) throw new ArgumentException("--item-id requires an eight-character album identifier.");
+		}
 		if (activityId is not null) PitItem.ValidateLiveId(activityId);
 		limits.Validate();
 		if (exif is not null) ImageExif.ValidateSelector(exif);
@@ -238,15 +243,15 @@ public static class ImageImport
 					var row = new ImageImportEntry { SourceEntry = entry.FullName };
 					receipt.Files.Add(row);
 					var staged = new RaiFile(new RaiFile(new RaiPath(extracted.FullPath), entry.FullName).FullName);
-					if (entry.FullName.EndsWith('/') || !Extensions.Contains("." + staged.Ext) || entry.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) || entry.Name.StartsWith("._", StringComparison.Ordinal))
+					if (entry.FullName.EndsWith('/') || !IsSupported(staged) || entry.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) || entry.Name.StartsWith("._", StringComparison.Ordinal))
 					{
 						row.Status = "Skipped";
 						row.Reason = "Directory, metadata, or unsupported media type.";
 						continue;
 					}
-					plan.Add(await PlanAsync(row, staged, entry.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix));
+					plan.Add(await PlanAsync(row, staged, entry.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix, albumId));
 				}
-				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
+				await ApplyAsync(plan, receipt, cancellationToken);
 			}
 			else
 			{
@@ -260,18 +265,18 @@ public static class ImageImport
 				{
 					var row = new ImageImportEntry { SourceEntry = file.NameWithExtension };
 					receipt.Files.Add(row);
-					if (!Extensions.Contains("." + file.Ext.TrimStart('.')))
+					if (!IsSupported(file))
 					{
 						row.Status = "Skipped"; row.Reason = "Unsupported media type."; continue;
 					}
 					using var input = file.OpenRead();
 					if (input.Length > limits.MaxExpandedBytes - expanded) throw new InvalidDataException("Source exceeds --max-expanded-bytes.");
 					expanded += input.Length;
-					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix));
+					plan.Add(await PlanAsync(row, file, input.Length, destination, pathConvention, namingConvention, cancellationToken, exif, itemTreePrefix, albumId));
 				}
 				if (moveSource && plan.Count == 1 && new RaiFile(source!).FullName == plan[0].Destination.FullName)
 					throw new InvalidDataException("--move source and destination are the same file.");
-				await ApplyAsync(plan, receipt, cancellationToken, noOverwrite);
+				await ApplyAsync(plan, receipt, cancellationToken);
 				if (moveSource && receipt.Status == "Completed" && plan.Count == 1)
 				{
 				try { new RaiFile(source!).rm(); }
@@ -310,41 +315,66 @@ public static class ImageImport
 		return receipt;
 	}
 
+	private static bool IsAlbumId(string id) => id.Length == 8 && id.All(c => char.IsLetterOrDigit(c) || c is '-' or '_');
+
+	private static bool IsSupported(RaiFile file) => Extensions.Contains("." + file.Ext.TrimStart('.'))
+		&& (!MediaTypes.IsCatalogOrMetadata(file.Ext) || file.NameWithExtension.Equals("album.json", StringComparison.OrdinalIgnoreCase)
+			|| file.NameWithExtension.EndsWith(".meta.json", StringComparison.OrdinalIgnoreCase));
+
+	private static RaiFile StreamingDestination(RaiFile source, RaiPath root, string? albumId, ImageImportEntry row)
+	{
+		var name = source.NameWithExtension;
+		if (name.Equals("album.json", StringComparison.OrdinalIgnoreCase))
+		{
+			row.ItemId = albumId ?? throw new InvalidDataException("album.json requires --item-id <Album8>.");
+			return new RaiFile(root / albumId, name);
+		}
+		if (name.Length <= 10 || !IsAlbumId(name[..8]) || !char.IsAsciiDigit(name[8]) || !char.IsAsciiDigit(name[9])
+			|| name[10] is not ('.' or '_'))
+			throw new InvalidDataException($"Expected an eight-character album ID and two-digit video number in {name}.");
+		row.ItemId = name[..10];
+		PitItem.ValidateLiveId(row.ItemId);
+		return new RaiFile(new ItemTreePath(root, row.ItemId).SubdirRoot, name);
+	}
+
 	private static async Task<Candidate> PlanAsync(ImageImportEntry row, RaiFile source, long length,
 		RaiPath root, PathConventionType pathConvention, ImageNamingConvention namingConvention, CancellationToken ct, string? exif,
-		string itemTreePrefix)
+		string itemTreePrefix, string? albumId)
 	{
 		// Inspect before EasyFileName can erase a template marker.
 		PitItem.ValidateLiveId(source.Name);
-		var normalized = new ImageFile(ImageFile.EasyFileName(source.FullName), namingConvention);
-		PitItem.ValidateLiveId(normalized.ItemId);
-		var target = new ImageTreeFile(root, normalized.ItemId, string.Empty, normalized.Ext, pathConvention, namingConvention)
-		{ ImageNumber = normalized.ImageNumber };
-		row.ItemId = normalized.ItemId;
-		row.Ext = normalized.Ext;
-		row.ImageNumber = normalized.ImageNumber;
+		RaiFile target;
+		row.Ext = source.Ext;
+		if (MediaTypes.IsStreamingAsset(source.Ext) || MediaTypes.IsCatalogOrMetadata(source.Ext))
+			target = StreamingDestination(source, root, albumId, row);
+		else
+		{
+			var normalized = new ImageFile(ImageFile.EasyFileName(source.FullName), namingConvention);
+			PitItem.ValidateLiveId(normalized.ItemId);
+			target = new ImageTreeFile(root, normalized.ItemId, string.Empty, normalized.Ext, pathConvention, namingConvention)
+			{ ImageNumber = normalized.ImageNumber };
+			row.ItemId = normalized.ItemId;
+			row.Ext = normalized.Ext;
+			row.ImageNumber = normalized.ImageNumber;
+			if (exif is not null && !MediaTypes.IsVideo(normalized.Ext)) row.Exif = await ImageExif.ReadMetadataAsync(source, exif, ct);
+		}
 		row.SizeBytes = length;
 		try { row.RelativePath = root.RelativeFileName(target); }
 		catch (ArgumentException ex) { throw new InvalidDataException("Image destination is outside the tenant root.", ex); }
 		var prefix = itemTreePrefix.Trim('/');
 		row.ItemTreePath = prefix.Length == 0 ? row.RelativePath : prefix + "/" + row.RelativePath;
-		if (exif is not null && !RaiImage.MediaTypes.IsVideo(normalized.Ext)) row.Exif = await ImageExif.ReadMetadataAsync(source, exif, ct);
 		using var input = new LimitedReadStream(source.OpenRead(), length);
 		var hash = await SHA256.HashDataAsync(input, ct);
 		return new Candidate(row, target, source.OpenRead, length, hash);
 	}
 
-	private static async Task ApplyAsync(List<Candidate> plan, ImageImportReceipt receipt, CancellationToken ct, bool noOverwrite)
+	private static async Task ApplyAsync(List<Candidate> plan, ImageImportReceipt receipt, CancellationToken ct)
 	{
 		if (plan.Count == 0) throw new InvalidDataException("Source contained 0 eligible images.");
 		var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		// No destination creation until every incoming collision has been checked.
 		foreach (var candidate in plan)
 			if (!destinations.Add(candidate.Destination.FullName)) throw new InvalidDataException("Multiple source images resolve to the same destination: " + candidate.Entry.RelativePath);
-		if (noOverwrite)
-			foreach (var candidate in plan)
-				if (candidate.Destination.Exists() && !await MatchesAsync(candidate, ct))
-					throw new InvalidDataException("Destination contains different content: " + candidate.Entry.RelativePath);
 		var cacheInvalidationFailed = false;
 		foreach (var candidate in plan)
 		{
@@ -352,24 +382,20 @@ public static class ImageImport
 			{
 				if (candidate.Destination.Exists())
 				{
-					if (await MatchesAsync(candidate, ct))
-						candidate.Entry.Status = "Unchanged";
-					else if (noOverwrite)
-						throw new IOException("Destination changed after preflight; existing file preserved.");
-					else
+					var invalidate = candidate.Destination is ImageTreeFile && candidate.Entry.ImageNumber is >= 0
+						&& !await MatchesAsync(candidate, ct);
+					using (var input = new LimitedReadStream(candidate.Open(), candidate.Length))
+					using (var output = candidate.Destination.OpenUpdate())
 					{
-						using var input = new LimitedReadStream(candidate.Open(), candidate.Length);
-						await candidate.Destination.WriteFromAsync(input, ct);
-						if (!await MatchesAsync(candidate, ct)) throw new IOException("Updated image failed content verification.");
-						candidate.Entry.Status = "Updated";
-						if (candidate.Entry.ImageNumber is >= 0)
-						{
-							candidate.Entry.Error = InvalidateDerivatives(candidate.Destination, candidate.Entry.ImageNumber.Value, ct);
-							if (candidate.Entry.Error is not null)
-							{
-								cacheInvalidationFailed = true;
-							}
-						}
+						await input.CopyToAsync(output, ct);
+						output.SetLength(output.Position);
+					}
+					if (!await MatchesAsync(candidate, ct)) throw new IOException("Rewritten image failed content verification.");
+					candidate.Entry.Status = "Updated";
+					if (invalidate && candidate.Destination is ImageTreeFile image && candidate.Entry.ImageNumber is int number && number >= 0)
+					{
+						candidate.Entry.Error = InvalidateDerivatives(image, number, ct);
+						if (candidate.Entry.Error is not null) cacheInvalidationFailed = true;
 					}
 				}
 				else

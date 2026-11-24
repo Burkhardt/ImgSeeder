@@ -16,6 +16,48 @@ public sealed class ImageImportTests : IDisposable
 	private RaiPath Destination => new(new RaiFile((new RaiPath(root) / ("images")), "Customer").FullName);
 
 	[Fact]
+	public async Task Organize_CmafSegmentsAndManifests_RoutesToLeaf8x2()
+	{
+		var names = Enumerable.Range(1, 8).Select(n => $"RBVist2601_seg_v0_{n:D5}.m4s")
+			.Concat(["RBVist2601_init_v0.m4s", "RBVist2601_001.m4s", "RBVist2601_900.m4s",
+				"RBVist2601.mpd", "RBVist2601_Daylight.mpd", "RBVist2601.m3u8", "RBVist2601_v0.m3u8",
+				"RBVist2601.meta.json", "RBVist2601_thumb.vtt"]).ToArray();
+		var zip = Zip(names.Select(name => ("nested/" + name, name)));
+		var receipt = await ImageImport.RunAsync(zip, null, null, null, Destination, "Customer", Limits,
+			exif: "*", cancellationToken: TestContext.Current.CancellationToken);
+		Assert.Equal("Completed", receipt.Status);
+		Assert.Equal(new ImageImportSummary(names.Length, 0, 0, 0, 0), receipt.Summary);
+		foreach (var name in names)
+		{
+			var entry = Assert.Single(receipt.Files, f => f.SourceEntry == "nested/" + name);
+			Assert.Equal("Customer/RBVist26/RBVist2601/" + name, entry.ItemTreePath);
+			Assert.Null(entry.Exif);
+			Assert.Equal(name, new TextFile(Destination / "RBVist26" / "RBVist2601", name, ext: null).ReadAllText());
+		}
+	}
+
+	[Fact]
+	public async Task Organize_AlwaysCopiesAndOverwrites_PreservesPosterAndMp4()
+	{
+		string[] names = ["RBVist2601_001.m4s", "RBVist2601.mpd", "RBVist2601.m3u8", "RBVist2601.meta.json", "RBVist2601.vtt"];
+		var original = Zip(names.Select(name => (name, "original bytes")));
+		Assert.Equal("Completed", (await Import(original)).Status);
+		var leaf = Destination / "RBVist26" / "RBVist2601";
+		string[] siblings = ["RBVist2601_Poster.jpg", "RBVist2601.mp4"];
+		foreach (var name in siblings) new TextFile(leaf, name, ext: null).WriteAllText("keep");
+		var oldWrite = DateTimeOffset.UtcNow.AddDays(-1);
+		foreach (var name in names) new RaiFile(leaf, name).LastWriteTimeUtc = oldWrite;
+		var repeat = await Import(original);
+		Assert.Equal(new ImageImportSummary(0, names.Length, 0, 0, 0), repeat.Summary);
+		foreach (var name in names) Assert.True(new RaiFile(leaf, name).LastWriteTimeUtc > oldWrite.AddHours(1));
+		var changed = await Import(Zip(names.Select(name => (name, "new"))));
+		Assert.Equal("Completed", changed.Status);
+		Assert.Equal(repeat.Summary, changed.Summary);
+		foreach (var name in names) Assert.Equal("new", new TextFile(leaf, name, ext: null).ReadAllText());
+		foreach (var name in siblings) Assert.Equal("keep", new TextFile(leaf, name, ext: null).ReadAllText());
+	}
+
+	[Fact]
 	public async Task DefaultsHaveNoApplicationQuotaAndNestedMetadataIsSkipped()
 	{
 		var zip = Zip(new[] { ("nested/Customer_Order_Sheet_0001.jpg", "image"), ("metadata/info.json", "{}") });
@@ -36,7 +78,7 @@ public sealed class ImageImportTests : IDisposable
 	}
 
 	[Fact]
-	public async Task OrderArchiveCopies193ImagesAndReplaysUnchanged()
+	public async Task OrderArchiveCopies193ImagesAndOverwritesOnReplay()
 	{
 		var zip = Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-{n:D3}.jpg", "photo-" + n)).Append(("metadata/info.json", "{}")));
 		var receipt = await Import(zip);
@@ -51,9 +93,9 @@ public sealed class ImageImportTests : IDisposable
 		});
 		var again = await Import(zip);
 		Assert.Equal("Completed", again.Status);
-		Assert.Equal(193, again.Summary.Unchanged);
+		Assert.Equal(0, again.Summary.Unchanged);
 		Assert.Equal(0, again.Summary.Copied);
-		Assert.Equal(0, again.Summary.Updated);
+		Assert.Equal(193, again.Summary.Updated);
 		using var json = JsonDocument.Parse(JsonSerializer.Serialize(receipt));
 		Assert.Equal("ImageImport", json.RootElement.GetProperty("Class").GetString());
 		Assert.False(json.RootElement.TryGetProperty("Modified", out _));
@@ -86,7 +128,7 @@ public sealed class ImageImportTests : IDisposable
 		}
 		var repeat = await Import(Zip(Enumerable.Range(1, 193).Select(n => ($"orders/customer-order-26-{n}.jpg", "photo-" + n))));
 		Assert.Equal(3, repeat.ReceiptVersion);
-		Assert.Equal(193, repeat.Summary.Unchanged);
+		Assert.Equal(193, repeat.Summary.Updated);
 	}
 
 	[Theory]
@@ -156,7 +198,7 @@ public sealed class ImageImportTests : IDisposable
 	}
 
 	[Fact]
-	public async Task SingleVideoFileCopiesThenReportsUnchangedAndUpdated()
+	public async Task SingleVideoFileCopiesThenOverwritesBothIdenticalAndChangedBytes()
 	{
 		new RaiPath(root).mkdir();
 		var source = new RaiFile(new RaiPath(root), "Server-Clip-001.mp4").FullName;
@@ -174,9 +216,13 @@ public sealed class ImageImportTests : IDisposable
 		var destination = new RaiFile(new RaiPath(Destination.FullPath), row.RelativePath!).FullName;
 		Assert.True(new RaiFile(destination).Exists());
 
+		var replayTarget = new RaiFile(destination);
+		var oldWrite = DateTimeOffset.UtcNow.AddDays(-1);
+		replayTarget.LastWriteTimeUtc = oldWrite;
 		var unchanged = await ImageImport.RunAsync(source, null, "Import002", null, Destination, "Customer", Limits,
 			cancellationToken: TestContext.Current.CancellationToken);
-		Assert.Equal(1, unchanged.Summary.Unchanged);
+		Assert.Equal(1, unchanged.Summary.Updated);
+		Assert.True(replayTarget.LastWriteTimeUtc > oldWrite.AddHours(1));
 
 		await new TextFile(source).WriteAllTextAsync("second", TestContext.Current.CancellationToken);
 		var updated = await ImageImport.RunAsync(source, null, "Import003", null, Destination, "Customer", Limits,
@@ -210,7 +256,7 @@ public sealed class ImageImportTests : IDisposable
 	}
 
 	[Fact]
-	public async Task FailedGuardedUpdateRetainsScratchSource()
+	public async Task MoveReplacesExistingDestinationBeforeDeletingSource()
 	{
 		new RaiPath(root).mkdir();
 		var source = new RaiFile(new RaiPath(root), "Server-Clip-003.mp4").FullName;
@@ -220,12 +266,12 @@ public sealed class ImageImportTests : IDisposable
 		Assert.Equal("Completed", first.Status);
 		await new TextFile(source).WriteAllTextAsync("replacement", TestContext.Current.CancellationToken);
 
-		var guarded = await ImageImport.RunAsync(source, null, "Import002", null, Destination, "Customer", Limits,
-			cancellationToken: TestContext.Current.CancellationToken, noOverwrite: true, moveSource: true);
+		var moved = await ImageImport.RunAsync(source, null, "Import002", null, Destination, "Customer", Limits,
+			cancellationToken: TestContext.Current.CancellationToken, moveSource: true);
 
-		Assert.Equal("Failed", guarded.Status);
-		Assert.True(new RaiFile(source).Exists());
-		Assert.Equal("original", await new TextFile(new RaiFile(Destination, first.Files.Single().RelativePath!).FullName).ReadAllTextAsync(TestContext.Current.CancellationToken));
+		Assert.Equal("Completed", moved.Status);
+		Assert.False(new RaiFile(source).Exists());
+		Assert.Equal("replacement", await new TextFile(new RaiFile(Destination, first.Files.Single().RelativePath!).FullName).ReadAllTextAsync(TestContext.Current.CancellationToken));
 	}
 
 	[Fact]
@@ -259,17 +305,17 @@ public sealed class ImageImportTests : IDisposable
 
 		Assert.Equal("Completed", changed.Status);
 		Assert.Equal(0, changed.Summary.Copied);
-		Assert.Equal(1, changed.Summary.Updated);
-		Assert.Equal(2, changed.Summary.Unchanged);
+		Assert.Equal(3, changed.Summary.Updated);
+		Assert.Equal(0, changed.Summary.Unchanged);
 		Assert.Equal("new-2", new TextFile(source).ReadAllText());
 		Assert.Equal("old-3", new TextFile(otherSource).ReadAllText());
 		Assert.False(new RaiFile(staleThumb).Exists());
 		Assert.False(new RaiFile(staleSmall).Exists());
 		Assert.All(new[] { otherThumb, unadornedWebp, diagram, sibling }, file => Assert.True(new RaiFile(file).Exists(), file));
-		Assert.Equal(1, changed.Range!.Updated);
+		Assert.Equal(3, changed.Range!.Updated);
 		using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(changed));
-		Assert.Equal(1, serialized.RootElement.GetProperty("Range").GetProperty("Updated").GetInt32());
-		Assert.Equal(1, serialized.RootElement.GetProperty("Summary").GetProperty("Updated").GetInt32());
+		Assert.Equal(3, serialized.RootElement.GetProperty("Range").GetProperty("Updated").GetInt32());
+		Assert.Equal(3, serialized.RootElement.GetProperty("Summary").GetProperty("Updated").GetInt32());
 	}
 
 	[Fact]
@@ -278,8 +324,8 @@ public sealed class ImageImportTests : IDisposable
 		await Import(Zip(Enumerable.Range(1, 3).Select(n => ($"Order-Sheet-{n:D3}.jpg", $"photo-{n}"))));
 		var expanded = await Import(Zip(Enumerable.Range(1, 5).Select(n => ($"Order-Sheet-{n:D3}.jpg", $"photo-{n}"))));
 		Assert.Equal(2, expanded.Summary.Copied);
-		Assert.Equal(3, expanded.Summary.Unchanged);
-		Assert.Equal(0, expanded.Summary.Updated);
+		Assert.Equal(0, expanded.Summary.Unchanged);
+		Assert.Equal(3, expanded.Summary.Updated);
 
 		var partial = await Import(Zip(new[] { ("Order-Sheet-002.jpg", "revised-2") }));
 		Assert.Equal(1, partial.Summary.Updated);
@@ -288,20 +334,6 @@ public sealed class ImageImportTests : IDisposable
 			var image = new ImageTreeFile(Destination, "OrderSheet", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = n };
 			Assert.Equal($"photo-{n}", new TextFile(image.FullName).ReadAllText());
 		}
-	}
-
-	[Fact]
-	public async Task NoOverwriteRejectsWholeBatchBeforeWriting()
-	{
-		var first = await Import(Zip(new[] { ("Order-Sheet-001.jpg", "original") }));
-		var existing = new RaiFile(new RaiPath(Destination.FullPath), first.Files[0].RelativePath!).FullName;
-		var incoming = Zip(new[] { ("Order-Sheet-001.jpg", "different"), ("Order-Sheet-002.jpg", "new") });
-		var result = await ImageImport.RunAsync(incoming, null, "Import001", null, Destination, "Customer", Limits,
-			cancellationToken: TestContext.Current.CancellationToken, noOverwrite: true);
-		Assert.Equal("Failed", result.Status);
-		Assert.Equal("original", new TextFile(existing).ReadAllText());
-		var added = new ImageTreeFile(Destination, "OrderSheet", string.Empty, "jpg", PathConventionType.ItemIdTree8x2, ImageNamingConvention.Structured) { ImageNumber = 2 };
-		Assert.False(added.Exists());
 	}
 
 	[Fact]

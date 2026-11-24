@@ -10,6 +10,26 @@ public sealed class ImportCliTests : IDisposable
 	private static readonly byte[] Photo = Convert.FromBase64String("/9j/4QBoRXhpZgAASUkqAAgAAAACADIBAgAUAAAAOAAAAGmHBAABAAAAJgAAAAAAAAABAAOQAgAUAAAATAAAAAAAAAAyMDI2OjA5OjI4IDIwOjI0OjMxADIwMjY6MDk6MjggMTc6NDA6MzEA/+AAEEpGSUYAAQEAAAEAAQAA/9sAQwADAgICAgIDAgICAwMDAwQGBAQEBAQIBgYFBgkICgoJCAkJCgwPDAoLDgsJCQ0RDQ4PEBAREAoMEhMSEBMPEBAQ/8AACwgAAgACAQERAP/EABQAAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/ACqf/9k=");
 
 	[Fact]
+	public void Organize_AlbumJson_RoutesTo8CharAlbumDirectory()
+	{
+		var scratch = new RaiPath(root);
+		scratch.mkdir();
+		var catalog = new TextFile(scratch, "album.json", ext: null);
+		catalog.WriteAllText("{}");
+		var tree = scratch / "Image";
+		string[] args = ["organize", "--source", catalog.FullName, "--root", tree.FullPath,
+			"--subscriber", "Vanguard", "--item-id", "RBVist26", "--json"];
+		var result = Run(args);
+		Assert.Equal(0, result.ExitCode);
+		using var receipt = JsonDocument.Parse(result.StandardOutput);
+		Assert.Equal("Vanguard/RBVist26/album.json", receipt.RootElement.GetProperty("Files")[0].GetProperty("ItemTreePath").GetString());
+		Assert.Equal("{}", new TextFile(tree / "Vanguard" / "RBVist26", "album.json", ext: null).ReadAllText());
+		Assert.NotEqual(0, Run([.. args, "--no-overwrite"]).ExitCode);
+		Assert.DoesNotContain("--no-overwrite", Run("--help").StandardOutput);
+		Assert.DoesNotContain("--no-overwrite", Run("organize", "--help").StandardOutput);
+	}
+
+	[Fact]
 	public void ZipReceiptUsesExistingRaiImageNamingAndSupportsExifOnBothVerbs()
 	{
 		new RaiPath(root).mkdir();
@@ -34,7 +54,7 @@ public sealed class ImportCliTests : IDisposable
 		var repeat = Run("organize", "--source", zipPath, "--root", images, "--tenant", "Customer", "--import-id", "Photos001", "--json");
 		Assert.Equal(0, repeat.ExitCode);
 		using var again = JsonDocument.Parse(repeat.StandardOutput);
-		Assert.Equal(1, again.RootElement.GetProperty("Summary").GetProperty("Unchanged").GetInt32());
+		Assert.Equal(1, again.RootElement.GetProperty("Summary").GetProperty("Updated").GetInt32());
 	}
 
 	[Fact]
@@ -140,7 +160,7 @@ public sealed class ImportCliTests : IDisposable
 	}
 
 	[Fact]
-	public void OrganizeNoOverwriteFlagRejectsChangedDestinationBeforeAddingNewImage()
+	public void OrganizeOverwritesChangedDestinationAndAddsNewImage()
 	{
 		new RaiPath(root).mkdir();
 		var firstZip = new RaiFile(new RaiPath(root), "first.zip").FullName;
@@ -155,13 +175,12 @@ public sealed class ImportCliTests : IDisposable
 		var images = new RaiFile(new RaiPath(root), "images").FullName;
 		var first = Run("organize", "--source", firstZip, "--root", images, "--tenant", "Customer", "--json");
 		Assert.Equal(0, first.ExitCode);
-		var guarded = Run("organize", "--source", changedZip, "--root", images, "--tenant", "Customer", "--no-overwrite", "--json");
-		Assert.Equal(1, guarded.ExitCode);
-		using var receipt = JsonDocument.Parse(guarded.StandardOutput);
-		Assert.Contains("Destination contains different content", receipt.RootElement.GetProperty("Error").GetString());
+		var replay = Run("organize", "--source", changedZip, "--root", images, "--tenant", "Customer", "--json");
+		Assert.Equal(0, replay.ExitCode);
+		using var receipt = JsonDocument.Parse(replay.StandardOutput);
+		Assert.Equal(1, receipt.RootElement.GetProperty("Summary").GetProperty("Updated").GetInt32());
 		var item = new RaiImage.ItemTreePath(new RaiPath(new RaiFile(new RaiPath(images), "Customer").FullName), "OrderSheet");
-		Assert.Equal(new[] { "OrderSheet_001.jpg" }, item.SelectFiles().Select(file => file.NameWithExtension).ToArray());
-		Assert.Equal(1, item.SelectFiles().Single().ReadAllBytes()[0]);
+		Assert.Equal(new byte[] { 2, 3 }, item.SelectFiles().OrderBy(file => file.NameWithExtension).Select(file => file.ReadAllBytes()[0]).ToArray());
 	}
 
 	[Fact]

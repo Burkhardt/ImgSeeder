@@ -1,10 +1,10 @@
 # ImgSeeder
 
-## Latest Version 4.7.1
+## Latest Version 4.7.2
 
 Show the executing machine as "on <machine>" in the CLI banner. Size both decorative rules to the complete heading, including the hostname; preserve bold cyan styling and plain redirected output.
 
-Latest release notes: [ImgSeeder 4.7.1 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#471).
+Latest release notes: [ImgSeeder 4.7.2 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#472).
 
 ## Previous Versions
 
@@ -54,8 +54,7 @@ iorg organize --source /tmp/Server-Clip-001.mp4 \
 
 For a single file, the JSON receipt includes `Files` with the canonical path
 relative to the configured cloud root. Without `-o`, `--json` writes the receipt
-to stdout and diagnostics to stderr. Identical destination bytes produce
-`Unchanged`; changed bytes produce a verified in-place `Updated` result. `--move`
+to stdout and diagnostics to stderr. New files report `Copied`. Every overwrite reports `Updated`, including identical bytes. `--move`
 (`--delete-source`) removes the source only after verified ingestion and is
 accepted only with a single local file, never a directory or ZIP archive.
 For a local `--root`, `ItemTreePath` is relative to that supplied root.
@@ -64,10 +63,20 @@ explicitly requested.
 
 Complete command and safety guidance: [`IORG-OPERATIONS.md`](https://github.com/Burkhardt/RAIkeep/blob/main/doc/IORG-OPERATIONS.md). Iorg has no JsonPit-style audit/event-log feature; use `iorg list` and the default dry-run form of `iorg clean <ItemId>` for read-only inspection.
 
+## Adaptive streaming imports
+
+Use `iorg organize` with the original filenames for CMAF segments, DASH manifests, HLS playlists, WebVTT files and item metadata. For example, `RBVist2601_seg_v0_00001.m4s` and `RBVist2601.meta.json` both land under `RBVist26/RBVist2601/` with their names intact. Import the album catalog with an explicit album ID:
+
+```sh
+iorg organize --source /scratch/album.json --app AIA --subscriber Vanguard --item-id RBVist26 --json
+```
+
+The catalog lands at `AIA/Image/Vanguard/RBVist26/album.json` on the selected cloud. Stream and catalog imports skip EXIF probing and preserve sibling posters, videos and derivatives.
+
 ## ZIP import and compact receipts (CR049 / CR054 / CR060 / CR061)
 
 CR060 adds the `-s`, `-o`, and `-i` options described below.
-CR061 adds idempotent upsert behavior and ReceiptVersion 3.
+Batch imports use ReceiptVersion 3.
 
 `iorg` inspects ZIP subdirectories for supported images, preserves the archive,
 and copies directly from its temporary extraction workspace into the ImageTree.
@@ -107,11 +116,8 @@ Target:         Customer/CustomerOr/CustomerOrderSheet26_010.jpg
 `Order_SHEET_001.jpg` becomes `OrderSheet_001.jpg`. Underscores do not remain in
 the normalized base stem. Earlier digits within descriptive words are preserved.
 ZIP folder names do not determine destination folders. A normalization collision
-within the incoming batch rejects it before copying. By default, an existing
-image with identical bytes is left untouched; one with different bytes is
-rewritten in place and its managed derivatives for that image number are removed.
-Use `--no-overwrite` to reject a batch containing any changed existing image
-before writing source images. An interrupted in-place write can leave partial
+within the incoming batch rejects it before copying. Every import rewrites existing destinations in place, including byte-identical files. Changes to image content invalidate the managed derivatives for that image number.
+An interrupted in-place write can leave partial
 content; `iorg` verifies the resulting SHA-256 and reports a failure if it differs.
 
 **4.5.5 path compatibility:** Structured output now uses at least three digits
@@ -162,7 +168,7 @@ Console.WriteLine(image.FullName);
 ```
 
 Use the receipt's convention values, not a custom padding or path pattern.
-Only successfully copied, updated, or unchanged images belong to ranges. Failed copies and
+Successfully copied and updated numbered images belong to ranges. Failed copies and
 skipped entries do not inflate a successful range. The receipt links to an
 activity with `ActivityId` and contains no top-level lifecycle `Status`.
 Activity lifecycle state remains in its own Pit. The library retains its
