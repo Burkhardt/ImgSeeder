@@ -126,6 +126,7 @@ public class SourceImageStructuredTreeTests
 	}
 
 	[Fact]
+	[Trait("Category", "CloudEffect")]
 	public void Organize_ConfiguredCloudDestination_WritesFinalFileDirectlyAndNeverCreatesStagingRoot()
 	{
 		var testRoot = NewTestRoot();
@@ -269,22 +270,15 @@ public class SourceImageStructuredTreeTests
 
 	private static RaiPath NewTestRoot()
 	{
-		return NewConfiguredCloudRoot("cr060");
+		return (Os.TempDir / ("iorg-" + Guid.NewGuid().ToString("N"))).mkdir();
 	}
 
 	private static RaiPath NewConfiguredCloudRoot(string label = "cr022")
 	{
-		foreach (var provider in new[] { "GoogleDriveRainer", "GoogleDrive" })
-		{
-			string? configured = Os.Config?.Cloud?[provider];
-			if (string.IsNullOrWhiteSpace(configured)) continue;
-			var providerRoot = new RaiPath(configured);
-			if (!providerRoot.Exists()) continue;
-			return (providerRoot / "RAIkeep" / "iorg-tests" / label / Guid.NewGuid().ToString("N")).mkdir();
-		}
-
-		Assert.Skip("These ImgSeeder cloud tests require an existing GoogleDriveRainer or GoogleDrive root in Os.Config.Cloud.");
-		throw new InvalidOperationException("Assert.Skip did not terminate the test.");
+		var provider = Os.TestCloud;
+		if (string.IsNullOrWhiteSpace(provider) || !Os.CloudRoot(provider).Exists())
+			Assert.Skip("The cloud destination case requires an available configured TestCloud.");
+		return (Os.CloudRoot(provider) / ("iorg-" + label + "-" + Guid.NewGuid().ToString("N"))).mkdir();
 	}
 
 	private static ImageTreeFile SeedImage(RaiPath subscriberRoot, string itemId, string nameExt, string ext, int imageNumber = ImageFile.NoImageNumber)

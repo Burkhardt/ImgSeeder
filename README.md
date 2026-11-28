@@ -1,10 +1,10 @@
 # ImgSeeder
 
-## Latest Version 4.7.2
+## Latest Version 4.7.3
 
 Show the executing machine as "on <machine>" in the CLI banner. Size both decorative rules to the complete heading, including the hostname; preserve bold cyan styling and plain redirected output.
 
-Latest release notes: [ImgSeeder 4.7.2 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#472).
+Latest release notes: [ImgSeeder 4.7.3 release notes](https://github.com/Burkhardt/RAIkeep/blob/main/doc/releases/v4.x/ImgSeeder_RELEASE_NOTES_4.x.md#473).
 
 ## Previous Versions
 
